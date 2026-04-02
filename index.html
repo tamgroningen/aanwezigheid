@@ -540,12 +540,16 @@ function exportToCSV() {
     if (!src) return;
 
     let csv = '\uFEFF'; // BOM for Excel UTF-8
+    let clubPctSum = 0, clubPctCount = 0;
 
     for (const trainer of src.trainers) {
+        let trainerPctSum = 0, trainerPctCount = 0;
+
         for (const group of trainer.groups) {
             const cancelled = group.cancelled || [];
             const today = new Date().toISOString().slice(0, 10);
             const activeDates = group.dates.filter(d => !cancelled.includes(d) && d <= today);
+            let groupPctSum = 0;
 
             // Header
             csv += `\n${trainer.name} - ${group.name}\n`;
@@ -566,6 +570,7 @@ function exportToCSV() {
                 const total = activeDates.length;
                 const pct = total > 0 ? Math.round((count / total) * 100) : 0;
                 csv += `${player};${cells.join(';')};${count};${total};${pct}%\n`;
+                if (total > 0) { groupPctSum += pct; trainerPctSum += pct; trainerPctCount++; }
             }
 
             // Totals row
@@ -574,8 +579,22 @@ function exportToCSV() {
                 return (group.attendance?.[d] || []).length;
             });
             csv += `Totaal;${totals.join(';')};;;\n`;
+
+            // Group average
+            const groupAvg = group.players.length > 0 ? Math.round(groupPctSum / group.players.length) : 0;
+            csv += `Groepsgemiddelde;${group.dates.map(() => '').join(';')};;;${groupAvg}%\n`;
         }
+
+        // Trainer average
+        const trainerAvg = trainerPctCount > 0 ? Math.round(trainerPctSum / trainerPctCount) : 0;
+        csv += `\nGemiddelde ${trainer.name};;;;${trainerAvg}%\n`;
+        clubPctSum += trainerPctSum;
+        clubPctCount += trainerPctCount;
     }
+
+    // Club average
+    const clubAvg = clubPctCount > 0 ? Math.round(clubPctSum / clubPctCount) : 0;
+    csv += `\nClubgemiddelde;;;;${clubAvg}%\n`;
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
