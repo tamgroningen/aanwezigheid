@@ -477,7 +477,6 @@ function bindAttendance(trainerId, groupId) {
             }, 300);
         });
     });
-}
 
     // Cancel date toggles
     document.querySelectorAll('.cancel-cb').forEach(cb => {
@@ -502,7 +501,6 @@ function bindAttendance(trainerId, groupId) {
 
             statusEl.textContent = 'Opgeslagen';
             statusEl.className = 'save-status saved';
-            // Re-render to update the grid (cancelled columns, percentages)
             setTimeout(() => navigate(), 500);
         });
     });
