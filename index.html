@@ -161,7 +161,35 @@ function renderHome() {
 
     // Admin view: all trainers with inline edit controls
     const src = isAdmin() && ADMIN_DATA ? ADMIN_DATA : DATA;
-    let html = '<h1>Overzicht Aanwezigheid</h1>';
+
+    // Calculate total club average
+    let totalPctSum = 0, totalPctCount = 0;
+    const trainerAvgs = {};
+    for (const trainer of src.trainers) {
+        let tSum = 0, tCount = 0;
+        for (const group of trainer.groups) {
+            const stats = calcGroupStats(group);
+            for (const ps of stats.playerStats) {
+                if (stats.totalSessions > 0) { tSum += ps.pct; tCount++; }
+            }
+        }
+        trainerAvgs[trainer.id] = tCount > 0 ? Math.round(tSum / tCount) : 0;
+        totalPctSum += tSum;
+        totalPctCount += tCount;
+    }
+    const clubAvg = totalPctCount > 0 ? Math.round(totalPctSum / totalPctCount) : 0;
+
+    let html = `<h1>Overzicht Aanwezigheid</h1>
+        <div class="club-avg card" style="margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                <div>
+                    <strong>Totaal clubgemiddelde</strong>
+                    <span class="pct ${pctClass(clubAvg)}" style="margin-left:8px;font-size:1rem">${clubAvg}%</span>
+                </div>
+                <button class="btn-sm" id="export-btn">Exporteer naar spreadsheet</button>
+            </div>
+            <div class="overview-bar" style="margin-top:8px"><div class="overview-bar-fill" style="width:${clubAvg}%;background:${barColor(clubAvg)}"></div></div>
+        </div>`;
 
     if (src.trainers.length === 0) {
         html += '<p class="empty">Nog geen trainers toegevoegd.</p>';
@@ -182,6 +210,7 @@ function renderHome() {
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
                 <div>
                     <h3 style="display:inline">${esc(trainer.name)}</h3>
+                    <span class="pct ${pctClass(trainerAvgs[trainer.id])}" style="margin-left:8px;font-size:0.85rem">${trainerAvgs[trainer.id]}% gem.</span>
                     ${isAdmin() && trainer.code ? `<span class="trainer-code" style="margin-left:8px">Code: ${esc(trainer.code)}</span>` : ''}
                 </div>
                 ${isAdmin() ? `<button class="btn-sm btn-danger delete-btn delete-trainer-btn" data-trainer-id="${trainer.id}">Verwijderen</button>` : ''}
@@ -506,7 +535,61 @@ function bindAttendance(trainerId, groupId) {
     });
 }
 
+function exportToCSV() {
+    const src = isAdmin() && ADMIN_DATA ? ADMIN_DATA : DATA;
+    if (!src) return;
+
+    let csv = '\uFEFF'; // BOM for Excel UTF-8
+
+    for (const trainer of src.trainers) {
+        for (const group of trainer.groups) {
+            const cancelled = group.cancelled || [];
+            const today = new Date().toISOString().slice(0, 10);
+            const activeDates = group.dates.filter(d => !cancelled.includes(d) && d <= today);
+
+            // Header
+            csv += `\n${trainer.name} - ${group.name}\n`;
+            csv += `Speler;${group.dates.map(d => {
+                const label = formatDate(d);
+                return cancelled.includes(d) ? label + ' (vervallen)' : label;
+            }).join(';')};Aanwezig;Totaal;Percentage\n`;
+
+            // Player rows
+            for (const player of group.players) {
+                let count = 0;
+                const cells = group.dates.map(d => {
+                    if (cancelled.includes(d)) return '';
+                    const present = (group.attendance?.[d] || []).includes(player);
+                    if (present) count++;
+                    return present ? 'x' : '';
+                });
+                const total = activeDates.length;
+                const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                csv += `${player};${cells.join(';')};${count};${total};${pct}%\n`;
+            }
+
+            // Totals row
+            const totals = group.dates.map(d => {
+                if (cancelled.includes(d)) return '';
+                return (group.attendance?.[d] || []).length;
+            });
+            csv += `Totaal;${totals.join(';')};;;\n`;
+        }
+    }
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `aanwezigheid_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
 function bindAdmin() {
+    // Export button
+    document.getElementById('export-btn')?.addEventListener('click', exportToCSV);
+
     // Toggle delete mode
     document.getElementById('toggle-delete-btn')?.addEventListener('click', () => {
         document.body.classList.toggle('delete-mode');
