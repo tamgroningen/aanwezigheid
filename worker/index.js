@@ -171,4 +171,13 @@ export default {
 
     return json({ error: 'Not found' }, 404);
   },
+
+  // Weekly backup cron (every Sunday at 3:00 AM)
+  async scheduled(event, env) {
+    const raw = await env.AANWEZIGHEID.get('data');
+    if (raw) {
+      const date = new Date().toISOString().slice(0, 10);
+      await env.AANWEZIGHEID.put(`backup:${date}`, raw);
+    }
+  },
 };

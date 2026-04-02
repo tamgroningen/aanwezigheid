@@ -481,7 +481,8 @@ function bindAdmin() {
     // Delete trainer
     document.querySelectorAll('.delete-trainer-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm('Trainer verwijderen?')) return;
+            const input = prompt('Typ "verwijder" om deze trainer en al zijn groepen te verwijderen:');
+            if (input?.toLowerCase() !== 'verwijder') return;
             const result = await apiPost('/admin/trainer', { action: 'delete', trainer_id: btn.dataset.trainerId });
             if (result.data) ADMIN_DATA = result.data;
             await fetchData();
@@ -530,7 +531,8 @@ function bindAdmin() {
     // Delete group
     document.querySelectorAll('.delete-group-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm('Groep verwijderen?')) return;
+            const input = prompt('Typ "verwijder" om deze groep en alle aanwezigheidsdata te verwijderen:');
+            if (input?.toLowerCase() !== 'verwijder') return;
             const result = await apiPost('/admin/group', { action: 'delete', trainer_id: btn.dataset.trainerId, group_id: btn.dataset.groupId });
             if (result.data) ADMIN_DATA = result.data;
             await fetchData();

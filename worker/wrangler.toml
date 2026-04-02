@@ -2,6 +2,9 @@ name = "aanwezigheid-sync"
 main = "index.js"
 compatibility_date = "2024-01-01"
 
+[triggers]
+crons = ["0 3 * * SUN"]
+
 [[kv_namespaces]]
 binding = "AANWEZIGHEID"
 id = "e1a81333d90f4976b13fd7dd877a732d"
