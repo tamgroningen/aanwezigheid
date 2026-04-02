@@ -119,7 +119,7 @@ function renderNav() {
         el.innerHTML = `<span class="nav-role">${esc(auth.trainer_name)}</span>
             <a href="#" class="nav-link" id="logout-btn">Uitloggen</a>`;
     } else {
-        el.innerHTML = `<a href="#login" class="nav-link">Inloggen</a>`;
+        el.innerHTML = '';
     }
     document.getElementById('logout-btn')?.addEventListener('click', e => { e.preventDefault(); clearAuth(); navigate(''); });
 }
@@ -133,7 +133,6 @@ function renderLogin() {
             <p class="error" id="login-error" style="display:none"></p>
             <button type="submit">Inloggen</button>
         </form>
-        <a href="#" class="login-skip">Alleen bekijken</a>
     </div></div>`;
 }
 
@@ -403,12 +402,17 @@ async function navigate(hash) {
     const app = document.getElementById('app');
     hash = hash || location.hash.replace(/^#/, '');
 
-    if (!DATA && hash !== 'login') {
+    if (!DATA && hash !== 'login' && getAuth()) {
         app.innerHTML = '<p>Laden...</p>';
         await fetchData();
     }
 
     renderNav();
+
+    if (!getAuth() && hash !== 'login') {
+        location.hash = 'login';
+        return;
+    }
 
     if (hash === 'login') {
         app.innerHTML = renderLogin();
