@@ -200,6 +200,10 @@ button:hover { background: var(--blue-light); }
     text-decoration: line-through;
 }
 
+/* Delete mode */
+.delete-btn { display: none; }
+body.delete-mode .delete-btn { display: inline-block; }
+
 /* Mobile */
 @media (max-width: 600px) {
     main { padding: 12px; }

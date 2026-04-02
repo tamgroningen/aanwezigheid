@@ -168,10 +168,13 @@ function renderHome() {
     }
 
     if (isAdmin()) {
-        html += `<form id="add-trainer-form" class="form-row" style="margin-bottom:16px">
-            <input type="text" name="name" placeholder="Naam nieuwe trainer" required>
-            <button type="submit">Toevoegen</button>
-        </form>`;
+        html += `<div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <form id="add-trainer-form" class="form-row" style="flex:1;margin:0">
+                <input type="text" name="name" placeholder="Naam nieuwe trainer" required>
+                <button type="submit">Toevoegen</button>
+            </form>
+            <button class="btn-sm btn-muted" id="toggle-delete-btn">Verwijdermodus</button>
+        </div>`;
     }
 
     for (const trainer of src.trainers) {
@@ -181,7 +184,7 @@ function renderHome() {
                     <h3 style="display:inline">${esc(trainer.name)}</h3>
                     ${isAdmin() && trainer.code ? `<span class="trainer-code" style="margin-left:8px">Code: ${esc(trainer.code)}</span>` : ''}
                 </div>
-                ${isAdmin() ? `<button class="btn-sm btn-danger delete-trainer-btn" data-trainer-id="${trainer.id}">Verwijderen</button>` : ''}
+                ${isAdmin() ? `<button class="btn-sm btn-danger delete-btn delete-trainer-btn" data-trainer-id="${trainer.id}">Verwijderen</button>` : ''}
             </div>`;
 
         // Groups
@@ -194,7 +197,7 @@ function renderHome() {
             html += `<div style="padding:8px 0;border-top:1px solid var(--border)">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
                     <a href="#group/${trainer.id}/${group.id}" style="color:var(--blue);font-weight:600">${esc(group.name)}</a>
-                    ${isAdmin() ? `<button class="btn-sm btn-danger delete-group-btn" data-trainer-id="${trainer.id}" data-group-id="${group.id}">X</button>` : ''}
+                    ${isAdmin() ? `<button class="btn-sm btn-danger delete-btn delete-group-btn" data-trainer-id="${trainer.id}" data-group-id="${group.id}">X</button>` : ''}
                 </div>
                 <div style="font-size:0.85rem;color:var(--muted)">${group.players.length} spelers, ${stats.totalSessions} lessen</div>
                 <div class="overview-bar"><div class="overview-bar-fill" style="width:${stats.avgAttendance}%;background:${barColor(stats.avgAttendance)}"></div></div>
@@ -467,6 +470,11 @@ function bindAttendance(trainerId, groupId) {
 }
 
 function bindAdmin() {
+    // Toggle delete mode
+    document.getElementById('toggle-delete-btn')?.addEventListener('click', () => {
+        document.body.classList.toggle('delete-mode');
+    });
+
     // Add trainer
     document.getElementById('add-trainer-form')?.addEventListener('submit', async e => {
         e.preventDefault();
