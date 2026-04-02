@@ -344,6 +344,16 @@ function renderGroup(trainerId, groupId) {
     }
     html += '<th>Totaal</th><th>%</th></tr></thead><tbody>';
 
+    // Cancel row (trainer + admin)
+    if (canEdit) {
+        html += '<tr class="cancel-row"><td class="player-name" style="font-size:0.75rem;color:var(--muted)">Vervallen?</td>';
+        for (const d of group.dates) {
+            const isCancelled = cancelled.includes(d);
+            html += `<td class="${isCancelled ? 'cancelled' : ''}"><input type="checkbox" class="cancel-cb" data-date="${d}" ${isCancelled ? 'checked' : ''}></td>`;
+        }
+        html += '<td></td><td></td></tr>';
+    }
+
     for (const ps of stats.playerStats) {
         html += `<tr><td class="player-name">${esc(ps.player)}</td>`;
         for (const d of group.dates) {
@@ -465,6 +475,35 @@ function bindAttendance(trainerId, groupId) {
                 statusEl.className = 'save-status saved';
                 setTimeout(() => { statusEl.textContent = ''; }, 2000);
             }, 300);
+        });
+    });
+}
+
+    // Cancel date toggles
+    document.querySelectorAll('.cancel-cb').forEach(cb => {
+        cb.addEventListener('change', async () => {
+            const date = cb.dataset.date;
+            const cancel = cb.checked;
+
+            const statusEl = document.getElementById('save-status');
+            statusEl.textContent = 'Opslaan...';
+            statusEl.className = 'save-status saving';
+
+            await apiPost('/cancel', { trainer_id: trainerId, group_id: groupId, date, cancel });
+
+            await fetchData();
+            if (isAdmin()) {
+                const r = await apiLogin(getAuth().code);
+                if (r.data) ADMIN_DATA = r.data;
+            } else if (getTrainerId()) {
+                const r = await apiLogin(getAuth().code);
+                if (r.trainer) TRAINER_DATA = r.trainer;
+            }
+
+            statusEl.textContent = 'Opgeslagen';
+            statusEl.className = 'save-status saved';
+            // Re-render to update the grid (cancelled columns, percentages)
+            setTimeout(() => navigate(), 500);
         });
     });
 }

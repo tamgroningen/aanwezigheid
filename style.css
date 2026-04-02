@@ -200,6 +200,10 @@ button:hover { background: var(--blue-light); }
     text-decoration: line-through;
 }
 
+/* Cancel row */
+.cancel-row td { background: #fef9e7; }
+.cancel-row td.cancelled { background: #e8daef; }
+
 /* Delete mode */
 .delete-btn { display: none; }
 body.delete-mode .delete-btn { display: inline-block; }
