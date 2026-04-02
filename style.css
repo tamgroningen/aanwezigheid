@@ -1,0 +1,177 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+    --blue: #1a5276;
+    --blue-light: #2980b9;
+    --blue-bg: #d6eaf8;
+    --bg: #f8f9fa;
+    --card: #ffffff;
+    --text: #212529;
+    --muted: #6c757d;
+    --border: #dee2e6;
+    --danger: #dc3545;
+    --red: #e74c3c;
+    --yellow: #f39c12;
+    --green: #27ae60;
+    --radius: 8px;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+}
+
+nav {
+    background: var(--blue);
+    color: white;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+nav .nav-brand { color: white; text-decoration: none; font-weight: 700; font-size: 1.1rem; }
+nav .nav-right { display: flex; align-items: center; gap: 12px; }
+nav .nav-role { color: rgba(255,255,255,0.7); font-size: 0.8rem; background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 10px; }
+nav .nav-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; }
+
+main { max-width: 1000px; margin: 0 auto; padding: 20px; }
+
+h1 { margin-bottom: 16px; }
+h2 { margin: 24px 0 12px; font-size: 1.2rem; }
+h3 { margin: 16px 0 8px; font-size: 1rem; }
+
+/* Login */
+.login-center { display: flex; justify-content: center; align-items: center; min-height: 60vh; }
+
+.login-card {
+    background: var(--card); padding: 40px; border-radius: var(--radius);
+    text-align: center; width: 100%; max-width: 360px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+}
+
+.login-card h1 { font-size: 1.3rem; margin-bottom: 8px; color: var(--blue); }
+.login-hint { color: var(--muted); font-size: 0.85rem; margin-bottom: 16px; }
+
+.login-card input {
+    width: 100%; padding: 12px; border: 2px solid var(--border);
+    border-radius: var(--radius); font-size: 1rem; text-align: center; margin-bottom: 12px;
+}
+.login-card input:focus { outline: none; border-color: var(--blue); }
+
+.login-card button {
+    width: 100%; padding: 12px; background: var(--blue); color: white;
+    border: none; border-radius: var(--radius); font-size: 1rem; font-weight: 600; cursor: pointer;
+}
+.login-card button:hover { background: var(--blue-light); }
+
+.login-skip { display: inline-block; margin-top: 16px; color: var(--muted); font-size: 0.85rem; }
+
+.error { color: var(--danger); font-size: 0.9rem; margin-bottom: 8px; }
+
+/* Cards */
+.card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 12px;
+}
+
+.card h3 { margin: 0 0 4px; }
+.card p { color: var(--muted); font-size: 0.85rem; }
+
+.card-link { text-decoration: none; color: var(--text); display: block; transition: box-shadow 0.15s; }
+.card-link:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+
+/* Tables */
+.table-wrap { overflow-x: auto; margin-bottom: 16px; }
+
+table.data {
+    width: 100%; border-collapse: collapse; background: var(--card);
+    border: 1px solid var(--border); font-size: 0.85rem;
+}
+
+table.data th, table.data td {
+    padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border);
+}
+
+table.data th {
+    background: var(--blue); color: white; font-weight: 600;
+    white-space: nowrap; position: sticky; top: 0;
+}
+
+table.data td.num { text-align: center; }
+table.data tbody tr:hover { background: var(--blue-bg); }
+
+/* Attendance grid */
+.att-grid { overflow-x: auto; }
+
+.att-grid table { border-collapse: collapse; font-size: 0.8rem; }
+.att-grid th, .att-grid td { padding: 6px 8px; border: 1px solid var(--border); text-align: center; white-space: nowrap; }
+.att-grid th { background: var(--blue); color: white; font-weight: 600; }
+.att-grid th.player-name { text-align: left; min-width: 140px; }
+.att-grid td.player-name { text-align: left; font-weight: 500; }
+.att-grid td.cancelled { background: #e8daef; }
+.att-grid th.cancelled { background: #7d3c98; }
+
+.att-grid input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+
+.att-grid .total { font-weight: 700; }
+.att-grid .pct { font-weight: 700; font-size: 0.75rem; }
+
+/* Percentage colors */
+.pct-red { background: #fadbd8; color: var(--red); }
+.pct-yellow { background: #fef9e7; color: #b7950b; }
+.pct-green { background: #d5f5e3; color: var(--green); }
+
+/* Overview table */
+.overview-group { margin-bottom: 24px; }
+.overview-group h3 { margin-bottom: 4px; }
+.overview-group .trainer-name { color: var(--muted); font-size: 0.85rem; margin-bottom: 8px; }
+
+.overview-bar {
+    height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin-top: 4px;
+}
+.overview-bar-fill { height: 100%; border-radius: 4px; }
+
+/* Forms */
+.form-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+
+.form-row input, .form-row select, .form-row textarea {
+    padding: 8px 12px; border: 2px solid var(--border);
+    border-radius: var(--radius); font-size: 0.9rem; flex: 1; min-width: 140px;
+}
+.form-row input:focus, .form-row textarea:focus { outline: none; border-color: var(--blue); }
+
+.form-row textarea { min-height: 80px; font-family: inherit; }
+
+button, .btn {
+    padding: 8px 16px; background: var(--blue); color: white;
+    border: none; border-radius: var(--radius); font-size: 0.9rem;
+    font-weight: 600; cursor: pointer; text-decoration: none;
+}
+button:hover { background: var(--blue-light); }
+
+.btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+.btn-danger { background: var(--danger); }
+.btn-muted { background: var(--muted); }
+
+.inline { display: inline; }
+.empty { color: var(--muted); font-style: italic; }
+
+.back-link { display: inline-block; margin-bottom: 12px; color: var(--blue); text-decoration: none; font-size: 0.9rem; }
+
+.trainer-code { font-family: monospace; font-size: 0.8rem; color: var(--blue); }
+
+.save-status {
+    display: inline-block; padding: 4px 12px; border-radius: var(--radius);
+    font-size: 0.85rem; font-weight: 600; margin-left: 8px;
+}
+.save-status.saving { color: var(--muted); }
+.save-status.saved { color: var(--green); }
+
+/* Mobile */
+@media (max-width: 600px) {
+    main { padding: 12px; }
+    .att-grid th, .att-grid td { padding: 4px 5px; font-size: 0.75rem; }
+}
