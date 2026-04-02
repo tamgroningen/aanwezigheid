@@ -1,9 +1,9 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-    --blue: #1a5276;
-    --blue-light: #2980b9;
-    --blue-bg: #d6eaf8;
+    --blue: #7b2d8e;
+    --blue-light: #9b4db5;
+    --blue-bg: #f0e0f5;
     --bg: #f8f9fa;
     --card: #ffffff;
     --text: #212529;
@@ -32,7 +32,8 @@ nav {
     align-items: center;
 }
 
-nav .nav-brand { color: white; text-decoration: none; font-weight: 700; font-size: 1.1rem; }
+nav .nav-brand { color: white; text-decoration: none; font-weight: 700; font-size: 1.1rem; display: flex; align-items: center; gap: 8px; }
+nav .nav-logo { height: 32px; width: 32px; border-radius: 4px; }
 nav .nav-right { display: flex; align-items: center; gap: 12px; }
 nav .nav-role { color: rgba(255,255,255,0.7); font-size: 0.8rem; background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 10px; }
 nav .nav-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; }
