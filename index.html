@@ -195,18 +195,24 @@ function renderHome() {
         html += '<p class="empty">Nog geen trainers toegevoegd.</p>';
     }
 
+    html += `<div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="search-field" placeholder="Zoek trainer, dag, groep..." style="flex:1;padding:8px 12px;border:2px solid var(--border);border-radius:var(--radius);font-size:0.9rem">
+        ${isAdmin() ? '<button class="btn-sm btn-muted" id="toggle-delete-btn">Verwijdermodus</button>' : ''}
+    </div>`;
+
     if (isAdmin()) {
-        html += `<div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
-            <form id="add-trainer-form" class="form-row" style="flex:1;margin:0">
+        html += `<details style="margin-bottom:16px">
+            <summary style="cursor:pointer;font-size:0.9rem;font-weight:600;color:var(--blue)">+ Trainer toevoegen</summary>
+            <form id="add-trainer-form" class="form-row" style="margin-top:8px">
                 <input type="text" name="name" placeholder="Naam nieuwe trainer" required>
                 <button type="submit">Toevoegen</button>
             </form>
-            <button class="btn-sm btn-muted" id="toggle-delete-btn">Verwijdermodus</button>
-        </div>`;
+        </details>`;
     }
 
     for (const trainer of src.trainers) {
-        html += `<div class="card">
+        const trainerSearch = trainer.name + ' ' + trainer.groups.map(g => g.name).join(' ');
+        html += `<div class="card trainer-card" data-search="${esc(trainerSearch.toLowerCase())}">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
                 <div>
                     <h3 style="display:inline">${esc(trainer.name)}</h3>
@@ -449,6 +455,7 @@ async function navigate(hash) {
         bindAttendance(trainerId, groupId);
     } else {
         app.innerHTML = renderHome();
+        bindSearch();
         if (isAdmin()) bindAdmin();
     }
 }
@@ -603,6 +610,16 @@ function exportToCSV() {
     a.download = `aanwezigheid_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+}
+
+function bindSearch() {
+    document.getElementById('search-field')?.addEventListener('input', (e) => {
+        const q = e.target.value.toLowerCase().trim();
+        document.querySelectorAll('.trainer-card').forEach(card => {
+            const text = card.dataset.search || '';
+            card.style.display = (!q || text.includes(q)) ? '' : 'none';
+        });
+    });
 }
 
 function bindAdmin() {
