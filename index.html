@@ -66,6 +66,29 @@ function formatDate(d) {
     return dt.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
 }
 
+const DAY_NAMES = ['Zondag','Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag'];
+
+function generateWeeklyDates(dayOfWeek, startDate, endDate) {
+    // dayOfWeek: 1=Monday, 7=Sunday (ISO)
+    const dates = [];
+    const jsDow = dayOfWeek % 7; // convert to JS: 0=Sun, 1=Mon, ...
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    const current = new Date(start);
+    // Move to first matching day
+    while (current.getDay() !== jsDow && current <= end) {
+        current.setDate(current.getDate() + 1);
+    }
+    while (current <= end) {
+        const y = current.getFullYear();
+        const m = String(current.getMonth() + 1).padStart(2, '0');
+        const d = String(current.getDate()).padStart(2, '0');
+        dates.push(`${y}-${m}-${d}`);
+        current.setDate(current.getDate() + 7);
+    }
+    return dates;
+}
+
 function calcGroupStats(group) {
     const activeDates = group.dates.filter(d => !(group.cancelled || []).includes(d));
     const totalSessions = activeDates.length;
@@ -316,24 +339,57 @@ function renderAdmin() {
                 </details>
                 <details style="margin-top:4px">
                     <summary style="cursor:pointer;font-size:0.85rem;color:var(--blue)">Lesdagen bewerken</summary>
-                    <form class="edit-dates-form" data-trainer-id="${trainer.id}" data-group-id="${group.id}" style="margin-top:4px">
+                    <div class="dates-editor" data-trainer-id="${trainer.id}" data-group-id="${group.id}" style="margin-top:8px">
                         <div class="form-row">
-                            <textarea name="dates" placeholder="Eén datum per regel (YYYY-MM-DD)">${esc(group.dates.join('\n'))}</textarea>
+                            <select class="dates-day">
+                                ${['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'].map((d,i) =>
+                                    `<option value="${i+1}">${d}</option>`
+                                ).join('')}
+                            </select>
+                            <input type="date" class="dates-start" placeholder="Startdatum">
+                            <input type="date" class="dates-end" placeholder="Einddatum">
+                            <button type="button" class="btn-sm generate-dates-btn">Genereer</button>
                         </div>
-                        <div class="form-row">
-                            <textarea name="cancelled" placeholder="Vervallen datums (YYYY-MM-DD)">${esc((group.cancelled || []).join('\n'))}</textarea>
+                        <div class="dates-list" style="margin-top:8px">
+                            ${group.dates.length > 0 ? `<p style="font-size:0.8rem;color:var(--muted);margin-bottom:4px">Klik op een datum om te markeren als vervallen</p>
+                            <div class="date-chips">
+                                ${group.dates.map(d => {
+                                    const isCancelled = (group.cancelled || []).includes(d);
+                                    return `<span class="date-chip ${isCancelled ? 'cancelled' : ''}" data-date="${d}">${formatDate(d)}</span>`;
+                                }).join('')}
+                            </div>
+                            <button type="button" class="btn-sm save-dates-btn" style="margin-top:8px">Opslaan</button>` : '<p class="empty">Geen lesdagen. Gebruik bovenstaande om te genereren.</p>'}
                         </div>
-                        <button type="submit" class="btn-sm">Opslaan</button>
-                    </form>
+                    </div>
                 </details>
             </div>`;
         }
 
         // Add group form
-        html += `<form class="add-group-form form-row" data-trainer-id="${trainer.id}" style="margin-top:8px">
-            <input type="text" name="name" placeholder="Nieuwe groep (bijv. Maandag 15:30-16:30)" required>
-            <button type="submit" class="btn-sm">Groep toevoegen</button>
-        </form>`;
+        html += `<div class="add-group-section" style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border)">
+            <strong style="font-size:0.9rem">Nieuwe groep</strong>
+            <form class="add-group-form" data-trainer-id="${trainer.id}" style="margin-top:4px">
+                <div class="form-row">
+                    <select name="day" required>
+                        <option value="">Dag</option>
+                        ${['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'].map(d =>
+                            `<option value="${d}">${d}</option>`
+                        ).join('')}
+                    </select>
+                    <input type="time" name="start_time" required>
+                    <input type="time" name="end_time" required>
+                </div>
+                <div class="form-row">
+                    <input type="number" name="speelsterkte" placeholder="Speelsterkte (optioneel)" min="1" max="12">
+                    <label style="display:flex;align-items:center;gap:4px;font-size:0.9rem"><input type="checkbox" name="selectie"> Selectie</label>
+                </div>
+                <div class="form-row">
+                    <input type="date" name="start_date" required>
+                    <input type="date" name="end_date" required>
+                </div>
+                <button type="submit" class="btn-sm">Groep toevoegen</button>
+            </form>
+        </div>`;
 
         html += '</div></div>';
     }
@@ -445,6 +501,7 @@ function bindAttendance(trainerId, groupId) {
 }
 
 function bindAdmin() {
+    // Add trainer
     document.getElementById('add-trainer-form')?.addEventListener('submit', async e => {
         e.preventDefault();
         const name = e.target.querySelector('input[name="name"]').value.trim();
@@ -455,6 +512,7 @@ function bindAdmin() {
         navigate('admin');
     });
 
+    // Delete trainer
     document.querySelectorAll('.delete-trainer-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
             if (!confirm('Trainer verwijderen?')) return;
@@ -465,18 +523,45 @@ function bindAdmin() {
         });
     });
 
+    // Add group (with day, time, date range → auto-generate dates)
     document.querySelectorAll('.add-group-form').forEach(form => {
         form.addEventListener('submit', async e => {
             e.preventDefault();
-            const name = form.querySelector('input[name="name"]').value.trim();
-            if (!name) return;
+            const day = form.querySelector('select[name="day"]').value;
+            const startTime = form.querySelector('input[name="start_time"]').value;
+            const endTime = form.querySelector('input[name="end_time"]').value;
+            const startDate = form.querySelector('input[name="start_date"]').value;
+            const endDate = form.querySelector('input[name="end_date"]').value;
+            if (!day || !startTime || !endTime || !startDate || !endDate) return;
+
+            const speelsterkte = form.querySelector('input[name="speelsterkte"]').value.trim();
+            const selectie = form.querySelector('input[name="selectie"]').checked;
+            let name = `${day} ${startTime}-${endTime}`;
+            const tags = [];
+            if (speelsterkte) tags.push(`Speelsterkte ${speelsterkte}`);
+            if (selectie) tags.push('Selectie');
+            if (tags.length) name += ` ${tags.join(' ')}`;
+            const dayIndex = ['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'].indexOf(day) + 1;
+            const dates = generateWeeklyDates(dayIndex, startDate, endDate);
+
+            // Create group
             const result = await apiPost('/admin/group', { action: 'add', trainer_id: form.dataset.trainerId, name });
-            if (result.data) ADMIN_DATA = result.data;
+            if (result.data) {
+                ADMIN_DATA = result.data;
+                // Find the newly created group and set dates
+                const trainer = ADMIN_DATA.trainers.find(t => t.id === form.dataset.trainerId);
+                const newGroup = trainer?.groups[trainer.groups.length - 1];
+                if (newGroup && dates.length > 0) {
+                    const r2 = await apiPost('/admin/dates', { trainer_id: form.dataset.trainerId, group_id: newGroup.id, dates, cancelled: [] });
+                    if (r2.data) ADMIN_DATA = r2.data;
+                }
+            }
             await fetchData();
             navigate('admin');
         });
     });
 
+    // Delete group
     document.querySelectorAll('.delete-group-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
             if (!confirm('Groep verwijderen?')) return;
@@ -487,6 +572,7 @@ function bindAdmin() {
         });
     });
 
+    // Edit players
     document.querySelectorAll('.edit-players-form').forEach(form => {
         form.addEventListener('submit', async e => {
             e.preventDefault();
@@ -499,18 +585,54 @@ function bindAdmin() {
         });
     });
 
-    document.querySelectorAll('.edit-dates-form').forEach(form => {
-        form.addEventListener('submit', async e => {
-            e.preventDefault();
-            const datesText = form.querySelector('textarea[name="dates"]').value;
-            const cancelledText = form.querySelector('textarea[name="cancelled"]').value;
-            const dates = datesText.split('\n').map(d => d.trim()).filter(Boolean);
-            const cancelled = cancelledText.split('\n').map(d => d.trim()).filter(Boolean);
-            const result = await apiPost('/admin/dates', { trainer_id: form.dataset.trainerId, group_id: form.dataset.groupId, dates, cancelled });
-            if (result.data) ADMIN_DATA = result.data;
-            await fetchData();
-            navigate('admin');
+    // Generate dates button (for existing groups)
+    document.querySelectorAll('.generate-dates-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const editor = btn.closest('.dates-editor');
+            const dayVal = editor.querySelector('.dates-day').value;
+            const startDate = editor.querySelector('.dates-start').value;
+            const endDate = editor.querySelector('.dates-end').value;
+            if (!startDate || !endDate) return alert('Selecteer start- en einddatum');
+            const dates = generateWeeklyDates(parseInt(dayVal), startDate, endDate);
+            if (dates.length === 0) return alert('Geen datums gevonden voor deze selectie');
+
+            // Render chips
+            const listEl = editor.querySelector('.dates-list');
+            listEl.innerHTML = `<p style="font-size:0.8rem;color:var(--muted);margin-bottom:4px">Klik op een datum om te markeren als vervallen</p>
+                <div class="date-chips">${dates.map(d =>
+                    `<span class="date-chip" data-date="${d}">${formatDate(d)}</span>`
+                ).join('')}</div>
+                <button type="button" class="btn-sm save-dates-btn" style="margin-top:8px">Opslaan</button>`;
+            bindDateChips(editor);
         });
+    });
+
+    // Bind existing date chips
+    document.querySelectorAll('.dates-editor').forEach(editor => bindDateChips(editor));
+}
+
+function bindDateChips(editor) {
+    const trainerId = editor.dataset.trainerId;
+    const groupId = editor.dataset.groupId;
+
+    editor.querySelectorAll('.date-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            chip.classList.toggle('cancelled');
+        });
+    });
+
+    editor.querySelector('.save-dates-btn')?.addEventListener('click', async () => {
+        const chips = editor.querySelectorAll('.date-chip');
+        const dates = [];
+        const cancelled = [];
+        chips.forEach(c => {
+            dates.push(c.dataset.date);
+            if (c.classList.contains('cancelled')) cancelled.push(c.dataset.date);
+        });
+        const result = await apiPost('/admin/dates', { trainer_id: trainerId, group_id: groupId, dates, cancelled });
+        if (result.data) ADMIN_DATA = result.data;
+        await fetchData();
+        navigate('admin');
     });
 }
 

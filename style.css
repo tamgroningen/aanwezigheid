@@ -170,6 +170,36 @@ button:hover { background: var(--blue-light); }
 .save-status.saving { color: var(--muted); }
 .save-status.saved { color: var(--green); }
 
+/* Date chips */
+.date-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.date-chip {
+    display: inline-block;
+    padding: 4px 10px;
+    background: var(--blue-bg);
+    color: var(--blue);
+    border-radius: 16px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s;
+}
+
+.date-chip:hover {
+    opacity: 0.8;
+}
+
+.date-chip.cancelled {
+    background: #fadbd8;
+    color: var(--red);
+    text-decoration: line-through;
+}
+
 /* Mobile */
 @media (max-width: 600px) {
     main { padding: 12px; }
