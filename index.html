@@ -113,7 +113,6 @@ function renderNav() {
     const auth = getAuth();
     if (isAdmin()) {
         el.innerHTML = `<span class="nav-role">Trainingsleider</span>
-            <a href="#admin" class="nav-link">Beheer</a>
             <a href="#" class="nav-link" id="logout-btn">Uitloggen</a>`;
     } else if (auth?.role === 'trainer') {
         el.innerHTML = `<span class="nav-role">${esc(auth.trainer_name)}</span>
@@ -138,62 +137,141 @@ function renderLogin() {
 
 function renderHome() {
     if (!DATA) return '<p>Laden...</p>';
+
+    // Trainer view: only their groups
+    if (getTrainerId()) {
+        const trainerId = getTrainerId();
+        const src = TRAINER_DATA || DATA?.trainers?.find(t => t.id === trainerId);
+        if (!src) return '<p>Trainer niet gevonden.</p>';
+        const trainer = src.groups ? src : { groups: [] };
+        let html = `<h1>Mijn groepen</h1>`;
+        if (trainer.groups.length === 0) {
+            return html + '<p class="empty">Nog geen groepen toegewezen. Neem contact op met de trainingsleider.</p>';
+        }
+        for (const group of trainer.groups) {
+            const stats = calcGroupStats(group);
+            html += `<a href="#group/${trainerId}/${group.id}" class="card card-link">
+                <h3>${esc(group.name)}</h3>
+                <p>${group.players.length} spelers, ${stats.totalSessions} lessen, ${stats.avgAttendance}% gem. aanwezigheid</p>
+                <div class="overview-bar"><div class="overview-bar-fill" style="width:${stats.avgAttendance}%;background:${barColor(stats.avgAttendance)}"></div></div>
+            </a>`;
+        }
+        return html;
+    }
+
+    // Admin view: all trainers with inline edit controls
     const src = isAdmin() && ADMIN_DATA ? ADMIN_DATA : DATA;
-
-    if (getTrainerId()) return renderTrainerHome();
-
     let html = '<h1>Overzicht Aanwezigheid</h1>';
 
     if (src.trainers.length === 0) {
         html += '<p class="empty">Nog geen trainers toegevoegd.</p>';
-        if (isAdmin()) html += '<p><a href="#admin">Ga naar beheer</a> om trainers toe te voegen.</p>';
-        return html;
+    }
+
+    if (isAdmin()) {
+        html += `<form id="add-trainer-form" class="form-row" style="margin-bottom:16px">
+            <input type="text" name="name" placeholder="Naam nieuwe trainer" required>
+            <button type="submit">Toevoegen</button>
+        </form>`;
     }
 
     for (const trainer of src.trainers) {
-        html += `<div class="card"><h3>${esc(trainer.name)}</h3>`;
-        if (isAdmin() && trainer.code) html += `<span class="trainer-code">Code: ${esc(trainer.code)}</span>`;
+        html += `<div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                <div>
+                    <h3 style="display:inline">${esc(trainer.name)}</h3>
+                    ${isAdmin() && trainer.code ? `<span class="trainer-code" style="margin-left:8px">Code: ${esc(trainer.code)}</span>` : ''}
+                </div>
+                ${isAdmin() ? `<button class="btn-sm btn-danger delete-trainer-btn" data-trainer-id="${trainer.id}">Verwijderen</button>` : ''}
+            </div>`;
 
+        // Groups
+        html += '<div style="margin-top:12px">';
         if (trainer.groups.length === 0) {
             html += '<p class="empty">Geen groepen</p>';
-        } else {
-            for (const group of trainer.groups) {
-                const stats = calcGroupStats(group);
-                html += `<div style="margin:8px 0">
-                    <strong>${esc(group.name)}</strong>
-                    <span style="margin-left:8px;font-size:0.85rem;color:var(--muted)">${group.players.length} spelers, ${stats.totalSessions} lessen</span>
-                    <div class="overview-bar"><div class="overview-bar-fill" style="width:${stats.avgAttendance}%;background:${barColor(stats.avgAttendance)}"></div></div>
-                    <span class="pct ${pctClass(stats.avgAttendance)}" style="font-size:0.8rem">${stats.avgAttendance}% gem. aanwezigheid</span>
-                </div>`;
-            }
         }
-        html += '</div>';
+        for (const group of trainer.groups) {
+            const stats = calcGroupStats(group);
+            html += `<div style="padding:8px 0;border-top:1px solid var(--border)">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                    <a href="#group/${trainer.id}/${group.id}" style="color:var(--blue);font-weight:600">${esc(group.name)}</a>
+                    ${isAdmin() ? `<button class="btn-sm btn-danger delete-group-btn" data-trainer-id="${trainer.id}" data-group-id="${group.id}">X</button>` : ''}
+                </div>
+                <div style="font-size:0.85rem;color:var(--muted)">${group.players.length} spelers, ${stats.totalSessions} lessen</div>
+                <div class="overview-bar"><div class="overview-bar-fill" style="width:${stats.avgAttendance}%;background:${barColor(stats.avgAttendance)}"></div></div>
+                <span class="pct ${pctClass(stats.avgAttendance)}" style="font-size:0.8rem">${stats.avgAttendance}% gem. aanwezigheid</span>`;
+
+            if (isAdmin()) {
+                html += `
+                <details style="margin-top:4px">
+                    <summary style="cursor:pointer;font-size:0.85rem;color:var(--blue)">Spelers bewerken</summary>
+                    <form class="edit-players-form" data-trainer-id="${trainer.id}" data-group-id="${group.id}" style="margin-top:4px">
+                        <div class="form-row">
+                            <textarea name="players" placeholder="Eén speler per regel">${esc(group.players.join('\n'))}</textarea>
+                        </div>
+                        <button type="submit" class="btn-sm">Opslaan</button>
+                    </form>
+                </details>
+                <details style="margin-top:4px">
+                    <summary style="cursor:pointer;font-size:0.85rem;color:var(--blue)">Lesdagen bewerken</summary>
+                    <div class="dates-editor" data-trainer-id="${trainer.id}" data-group-id="${group.id}" style="margin-top:8px">
+                        <div class="form-row">
+                            <select class="dates-day">
+                                ${['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'].map((d,i) =>
+                                    `<option value="${i+1}">${d}</option>`
+                                ).join('')}
+                            </select>
+                            <input type="date" class="dates-start" placeholder="Startdatum">
+                            <input type="date" class="dates-end" placeholder="Einddatum">
+                            <button type="button" class="btn-sm generate-dates-btn">Genereer</button>
+                        </div>
+                        <div class="dates-list" style="margin-top:8px">
+                            ${group.dates.length > 0 ? `<p style="font-size:0.8rem;color:var(--muted);margin-bottom:4px">Klik op een datum om te markeren als vervallen</p>
+                            <div class="date-chips">
+                                ${group.dates.map(d => {
+                                    const isCancelled = (group.cancelled || []).includes(d);
+                                    return `<span class="date-chip ${isCancelled ? 'cancelled' : ''}" data-date="${d}">${formatDate(d)}</span>`;
+                                }).join('')}
+                            </div>
+                            <button type="button" class="btn-sm save-dates-btn" style="margin-top:8px">Opslaan</button>` : '<p class="empty">Geen lesdagen. Gebruik bovenstaande om te genereren.</p>'}
+                        </div>
+                    </div>
+                </details>`;
+            }
+
+            html += '</div>';
+        }
+
+        if (isAdmin()) {
+            html += `<details class="add-group-section" style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border)">
+                <summary style="cursor:pointer;font-size:0.9rem;font-weight:600;color:var(--blue)">+ Nieuwe groep</summary>
+                <form class="add-group-form" data-trainer-id="${trainer.id}" style="margin-top:8px">
+                    <div class="form-row">
+                        <select name="day" required>
+                            <option value="">Dag</option>
+                            ${['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'].map(d =>
+                                `<option value="${d}">${d}</option>`
+                            ).join('')}
+                        </select>
+                        <input type="time" name="start_time" required>
+                        <input type="time" name="end_time" required>
+                    </div>
+                    <div class="form-row">
+                        <input type="number" name="speelsterkte" placeholder="Speelsterkte (optioneel)" min="1" max="12">
+                        <label style="display:flex;align-items:center;gap:4px;font-size:0.9rem"><input type="checkbox" name="selectie"> Selectie</label>
+                    </div>
+                    <div class="form-row">
+                        <input type="date" name="start_date" required>
+                        <input type="date" name="end_date" required>
+                    </div>
+                    <button type="submit" class="btn-sm">Groep toevoegen</button>
+                </form>
+            </details>`;
+        }
+
+        html += '</div></div>';
     }
 
     html += '<h2><a href="#overview" style="color:var(--blue)">Volledig overzicht per speler &rarr;</a></h2>';
-    return html;
-}
-
-function renderTrainerHome() {
-    const trainerId = getTrainerId();
-    const src = TRAINER_DATA || DATA?.trainers?.find(t => t.id === trainerId);
-    if (!src) return '<p>Trainer niet gevonden.</p>';
-
-    const trainer = src.groups ? src : { groups: [] };
-    let html = `<h1>Mijn groepen</h1>`;
-
-    if (trainer.groups.length === 0) {
-        return html + '<p class="empty">Nog geen groepen toegewezen. Neem contact op met de trainingsleider.</p>';
-    }
-
-    for (const group of trainer.groups) {
-        const stats = calcGroupStats(group);
-        html += `<a href="#group/${trainerId}/${group.id}" class="card card-link">
-            <h3>${esc(group.name)}</h3>
-            <p>${group.players.length} spelers, ${stats.totalSessions} lessen, ${stats.avgAttendance}% gem. aanwezigheid</p>
-            <div class="overview-bar"><div class="overview-bar-fill" style="width:${stats.avgAttendance}%;background:${barColor(stats.avgAttendance)}"></div></div>
-        </a>`;
-    }
     return html;
 }
 
@@ -239,7 +317,7 @@ function renderGroup(trainerId, groupId) {
     if (!group) return '<p>Groep niet gevonden.</p>';
 
     const canEdit = isAdmin() || getTrainerId() === trainerId;
-    const backHash = getTrainerId() ? '#' : isAdmin() ? '#admin' : `#trainer/${trainerId}`;
+    const backHash = '#';
 
     let html = `<a href="${backHash}" class="back-link">&larr; Terug</a>
         <h1>${esc(group.name)}<span class="save-status" id="save-status"></span></h1>`;
@@ -297,105 +375,6 @@ function renderGroup(trainerId, groupId) {
     return html;
 }
 
-function renderAdmin() {
-    if (!isAdmin() || !ADMIN_DATA) return '<p>Geen toegang.</p>';
-
-    let html = '<h1>Beheer</h1>';
-
-    // Add trainer form
-    html += `<h2>Trainers</h2>
-        <form id="add-trainer-form" class="form-row" style="margin-bottom:16px">
-            <input type="text" name="name" placeholder="Naam nieuwe trainer" required>
-            <button type="submit">Toevoegen</button>
-        </form>`;
-
-    for (const trainer of ADMIN_DATA.trainers) {
-        html += `<div class="card">
-            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-                <div>
-                    <h3 style="display:inline">${esc(trainer.name)}</h3>
-                    <span class="trainer-code" style="margin-left:8px">Code: ${esc(trainer.code)}</span>
-                </div>
-                <button class="btn-sm btn-danger delete-trainer-btn" data-trainer-id="${trainer.id}">Verwijderen</button>
-            </div>`;
-
-        // Groups
-        html += '<div style="margin-top:12px">';
-        for (const group of trainer.groups) {
-            html += `<div style="padding:8px 0;border-top:1px solid var(--border)">
-                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-                    <a href="#group/${trainer.id}/${group.id}" style="color:var(--blue);font-weight:600">${esc(group.name)}</a>
-                    <button class="btn-sm btn-danger delete-group-btn" data-trainer-id="${trainer.id}" data-group-id="${group.id}">X</button>
-                </div>
-                <div style="font-size:0.85rem;color:var(--muted)">${group.players.length} spelers, ${group.dates.length} lesdagen</div>
-                <details style="margin-top:4px">
-                    <summary style="cursor:pointer;font-size:0.85rem;color:var(--blue)">Spelers bewerken</summary>
-                    <form class="edit-players-form" data-trainer-id="${trainer.id}" data-group-id="${group.id}" style="margin-top:4px">
-                        <div class="form-row">
-                            <textarea name="players" placeholder="Eén speler per regel">${esc(group.players.join('\n'))}</textarea>
-                        </div>
-                        <button type="submit" class="btn-sm">Opslaan</button>
-                    </form>
-                </details>
-                <details style="margin-top:4px">
-                    <summary style="cursor:pointer;font-size:0.85rem;color:var(--blue)">Lesdagen bewerken</summary>
-                    <div class="dates-editor" data-trainer-id="${trainer.id}" data-group-id="${group.id}" style="margin-top:8px">
-                        <div class="form-row">
-                            <select class="dates-day">
-                                ${['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'].map((d,i) =>
-                                    `<option value="${i+1}">${d}</option>`
-                                ).join('')}
-                            </select>
-                            <input type="date" class="dates-start" placeholder="Startdatum">
-                            <input type="date" class="dates-end" placeholder="Einddatum">
-                            <button type="button" class="btn-sm generate-dates-btn">Genereer</button>
-                        </div>
-                        <div class="dates-list" style="margin-top:8px">
-                            ${group.dates.length > 0 ? `<p style="font-size:0.8rem;color:var(--muted);margin-bottom:4px">Klik op een datum om te markeren als vervallen</p>
-                            <div class="date-chips">
-                                ${group.dates.map(d => {
-                                    const isCancelled = (group.cancelled || []).includes(d);
-                                    return `<span class="date-chip ${isCancelled ? 'cancelled' : ''}" data-date="${d}">${formatDate(d)}</span>`;
-                                }).join('')}
-                            </div>
-                            <button type="button" class="btn-sm save-dates-btn" style="margin-top:8px">Opslaan</button>` : '<p class="empty">Geen lesdagen. Gebruik bovenstaande om te genereren.</p>'}
-                        </div>
-                    </div>
-                </details>
-            </div>`;
-        }
-
-        // Add group form
-        html += `<details class="add-group-section" style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border)">
-            <summary style="cursor:pointer;font-size:0.9rem;font-weight:600;color:var(--blue)">+ Nieuwe groep</summary>
-            <form class="add-group-form" data-trainer-id="${trainer.id}" style="margin-top:8px">
-                <div class="form-row">
-                    <select name="day" required>
-                        <option value="">Dag</option>
-                        ${['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'].map(d =>
-                            `<option value="${d}">${d}</option>`
-                        ).join('')}
-                    </select>
-                    <input type="time" name="start_time" required>
-                    <input type="time" name="end_time" required>
-                </div>
-                <div class="form-row">
-                    <input type="number" name="speelsterkte" placeholder="Speelsterkte (optioneel)" min="1" max="12">
-                    <label style="display:flex;align-items:center;gap:4px;font-size:0.9rem"><input type="checkbox" name="selectie"> Selectie</label>
-                </div>
-                <div class="form-row">
-                    <input type="date" name="start_date" required>
-                    <input type="date" name="end_date" required>
-                </div>
-                <button type="submit" class="btn-sm">Groep toevoegen</button>
-            </form>
-        </details>`;
-
-        html += '</div></div>';
-    }
-
-    return html;
-}
 
 // --- Routing ---
 async function navigate(hash) {
@@ -420,33 +399,15 @@ async function navigate(hash) {
     } else if (hash === 'overview') {
         app.innerHTML = renderOverview();
     } else if (hash === 'admin') {
-        app.innerHTML = renderAdmin();
-        bindAdmin();
+        location.hash = '';
+        return;
     } else if (hash.startsWith('group/')) {
         const [, trainerId, groupId] = hash.split('/');
         app.innerHTML = renderGroup(trainerId, groupId);
         bindAttendance(trainerId, groupId);
-    } else if (hash.startsWith('trainer/')) {
-        const trainerId = hash.split('/')[1];
-        // Show trainer's groups for admin view
-        const src = ADMIN_DATA || DATA;
-        const trainer = src?.trainers?.find(t => t.id === trainerId);
-        if (trainer) {
-            let html = `<a href="#" class="back-link">&larr; Terug</a><h1>${esc(trainer.name)}</h1>`;
-            for (const group of trainer.groups) {
-                const stats = calcGroupStats(group);
-                html += `<a href="#group/${trainerId}/${group.id}" class="card card-link">
-                    <h3>${esc(group.name)}</h3>
-                    <p>${group.players.length} spelers, ${stats.totalSessions} lessen, ${stats.avgAttendance}% gem.</p>
-                    <div class="overview-bar"><div class="overview-bar-fill" style="width:${stats.avgAttendance}%;background:${barColor(stats.avgAttendance)}"></div></div>
-                </a>`;
-            }
-            app.innerHTML = html;
-        } else {
-            app.innerHTML = '<p>Trainer niet gevonden.</p>';
-        }
     } else {
         app.innerHTML = renderHome();
+        if (isAdmin()) bindAdmin();
     }
 }
 
@@ -514,7 +475,7 @@ function bindAdmin() {
         const result = await apiPost('/admin/trainer', { action: 'add', name });
         if (result.data) ADMIN_DATA = result.data;
         await fetchData();
-        navigate('admin');
+        navigate('');
     });
 
     // Delete trainer
@@ -524,7 +485,7 @@ function bindAdmin() {
             const result = await apiPost('/admin/trainer', { action: 'delete', trainer_id: btn.dataset.trainerId });
             if (result.data) ADMIN_DATA = result.data;
             await fetchData();
-            navigate('admin');
+            navigate('');
         });
     });
 
@@ -562,7 +523,7 @@ function bindAdmin() {
                 }
             }
             await fetchData();
-            navigate('admin');
+            navigate('');
         });
     });
 
@@ -573,7 +534,7 @@ function bindAdmin() {
             const result = await apiPost('/admin/group', { action: 'delete', trainer_id: btn.dataset.trainerId, group_id: btn.dataset.groupId });
             if (result.data) ADMIN_DATA = result.data;
             await fetchData();
-            navigate('admin');
+            navigate('');
         });
     });
 
@@ -586,7 +547,7 @@ function bindAdmin() {
             const result = await apiPost('/admin/players', { trainer_id: form.dataset.trainerId, group_id: form.dataset.groupId, players });
             if (result.data) ADMIN_DATA = result.data;
             await fetchData();
-            navigate('admin');
+            navigate('');
         });
     });
 
@@ -637,7 +598,7 @@ function bindDateChips(editor) {
         const result = await apiPost('/admin/dates', { trainer_id: trainerId, group_id: groupId, dates, cancelled });
         if (result.data) ADMIN_DATA = result.data;
         await fetchData();
-        navigate('admin');
+        navigate('');
     });
 }
 
