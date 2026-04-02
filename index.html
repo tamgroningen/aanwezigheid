@@ -239,7 +239,7 @@ function renderGroup(trainerId, groupId) {
     if (!group) return '<p>Groep niet gevonden.</p>';
 
     const canEdit = isAdmin() || getTrainerId() === trainerId;
-    const backHash = getTrainerId() ? '#' : `#trainer/${trainerId}`;
+    const backHash = getTrainerId() ? '#' : isAdmin() ? '#admin' : `#trainer/${trainerId}`;
 
     let html = `<a href="${backHash}" class="back-link">&larr; Terug</a>
         <h1>${esc(group.name)}<span class="save-status" id="save-status"></span></h1>`;
