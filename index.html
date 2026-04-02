@@ -90,7 +90,8 @@ function generateWeeklyDates(dayOfWeek, startDate, endDate) {
 }
 
 function calcGroupStats(group) {
-    const activeDates = group.dates.filter(d => !(group.cancelled || []).includes(d));
+    const today = new Date().toISOString().slice(0, 10);
+    const activeDates = group.dates.filter(d => !(group.cancelled || []).includes(d) && d <= today);
     const totalSessions = activeDates.length;
     const playerStats = group.players.map(player => {
         let count = 0;
@@ -366,9 +367,9 @@ function renderAdmin() {
         }
 
         // Add group form
-        html += `<div class="add-group-section" style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border)">
-            <strong style="font-size:0.9rem">Nieuwe groep</strong>
-            <form class="add-group-form" data-trainer-id="${trainer.id}" style="margin-top:4px">
+        html += `<details class="add-group-section" style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border)">
+            <summary style="cursor:pointer;font-size:0.9rem;font-weight:600;color:var(--blue)">+ Nieuwe groep</summary>
+            <form class="add-group-form" data-trainer-id="${trainer.id}" style="margin-top:8px">
                 <div class="form-row">
                     <select name="day" required>
                         <option value="">Dag</option>
@@ -389,7 +390,7 @@ function renderAdmin() {
                 </div>
                 <button type="submit" class="btn-sm">Groep toevoegen</button>
             </form>
-        </div>`;
+        </details>`;
 
         html += '</div></div>';
     }
