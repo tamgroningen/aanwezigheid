@@ -172,42 +172,15 @@ button:hover { background: var(--blue-light); }
 .save-status.saved { color: var(--green); }
 
 /* Date chips */
-.date-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.date-chip {
-    display: inline-block;
-    padding: 4px 10px;
-    background: var(--blue-bg);
-    color: var(--blue);
-    border-radius: 16px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    user-select: none;
-    transition: all 0.15s;
-}
-
-.date-chip:hover {
-    opacity: 0.8;
-}
-
-.date-chip.cancelled {
-    background: #fadbd8;
-    color: var(--red);
-    text-decoration: line-through;
-}
 
 /* Cancel row */
 .cancel-row td { background: #fef9e7; }
 .cancel-row td.cancelled { background: #e8daef; }
 
 /* Delete mode */
-.delete-btn { display: none; }
+.delete-btn, .edit-players-detail { display: none; }
 body.delete-mode .delete-btn { display: inline-block; }
+body.delete-mode .edit-players-detail { display: block; }
 
 /* Mobile */
 @media (max-width: 600px) {

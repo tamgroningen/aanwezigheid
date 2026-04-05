@@ -101,9 +101,16 @@ function calcGroupStats(group) {
         const pct = totalSessions > 0 ? Math.round((count / totalSessions) * 100) : 0;
         return { player, count, totalSessions, pct };
     });
-    const avgAttendance = totalSessions > 0 && group.players.length > 0
-        ? Math.round(playerStats.reduce((s, p) => s + p.pct, 0) / group.players.length)
-        : 0;
+    // Use totalPresent (incl. subs) per date when available, otherwise count from checklist
+    let avgAttendance = 0;
+    if (totalSessions > 0 && group.players.length > 0) {
+        let presentSum = 0;
+        for (const d of activeDates) {
+            const tp = group.totalPresent?.[d];
+            presentSum += tp != null ? tp : (group.attendance?.[d] || []).length;
+        }
+        avgAttendance = Math.round((presentSum / (totalSessions * group.players.length)) * 100);
+    }
     return { playerStats, totalSessions, avgAttendance };
 }
 
@@ -162,16 +169,14 @@ function renderHome() {
     // Admin view: all trainers with inline edit controls
     const src = isAdmin() && ADMIN_DATA ? ADMIN_DATA : DATA;
 
-    // Calculate total club average
+    // Calculate total club average (using totalPresent-aware group averages)
     let totalPctSum = 0, totalPctCount = 0;
     const trainerAvgs = {};
     for (const trainer of src.trainers) {
         let tSum = 0, tCount = 0;
         for (const group of trainer.groups) {
             const stats = calcGroupStats(group);
-            for (const ps of stats.playerStats) {
-                if (stats.totalSessions > 0) { tSum += ps.pct; tCount++; }
-            }
+            if (stats.totalSessions > 0) { tSum += stats.avgAttendance; tCount++; }
         }
         trainerAvgs[trainer.id] = tCount > 0 ? Math.round(tSum / tCount) : 0;
         totalPctSum += tSum;
@@ -240,7 +245,7 @@ function renderHome() {
 
             if (isAdmin()) {
                 html += `
-                <details style="margin-top:4px">
+                <details class="edit-players-detail" style="margin-top:4px">
                     <summary style="cursor:pointer;font-size:0.85rem;color:var(--blue)">Spelers bewerken</summary>
                     <form class="edit-players-form" data-trainer-id="${trainer.id}" data-group-id="${group.id}" style="margin-top:4px">
                         <div class="form-row">
@@ -249,31 +254,7 @@ function renderHome() {
                         <button type="submit" class="btn-sm">Opslaan</button>
                     </form>
                 </details>
-                <details style="margin-top:4px">
-                    <summary style="cursor:pointer;font-size:0.85rem;color:var(--blue)">Lesdagen bewerken</summary>
-                    <div class="dates-editor" data-trainer-id="${trainer.id}" data-group-id="${group.id}" style="margin-top:8px">
-                        <div class="form-row">
-                            <select class="dates-day">
-                                ${['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'].map((d,i) =>
-                                    `<option value="${i+1}">${d}</option>`
-                                ).join('')}
-                            </select>
-                            <input type="date" class="dates-start" placeholder="Startdatum">
-                            <input type="date" class="dates-end" placeholder="Einddatum">
-                            <button type="button" class="btn-sm generate-dates-btn">Genereer</button>
-                        </div>
-                        <div class="dates-list" style="margin-top:8px">
-                            ${group.dates.length > 0 ? `<p style="font-size:0.8rem;color:var(--muted);margin-bottom:4px">Klik op een datum om te markeren als vervallen</p>
-                            <div class="date-chips">
-                                ${group.dates.map(d => {
-                                    const isCancelled = (group.cancelled || []).includes(d);
-                                    return `<span class="date-chip ${isCancelled ? 'cancelled' : ''}" data-date="${d}">${formatDate(d)}</span>`;
-                                }).join('')}
-                            </div>
-                            <button type="button" class="btn-sm save-dates-btn" style="margin-top:8px">Opslaan</button>` : '<p class="empty">Geen lesdagen. Gebruik bovenstaande om te genereren.</p>'}
-                        </div>
-                    </div>
-                </details>`;
+`;
             }
 
             html += '</div>';
@@ -419,6 +400,23 @@ function renderGroup(trainerId, groupId) {
     }
     html += '<td></td><td></td></tr>';
 
+    // Total present incl. subs row
+    html += '<tr style="font-weight:700"><td style="font-size:0.75rem">Totaal (incl. invallers)</td>';
+    for (const d of group.dates) {
+        const isCancelled = cancelled.includes(d);
+        if (isCancelled) {
+            html += '<td class="cancelled"></td>';
+        } else {
+            const val = group.totalPresent?.[d];
+            if (canEdit) {
+                html += `<td><input type="number" min="0" class="total-present-input" data-date="${d}" value="${val != null ? val : ''}" style="width:3em;text-align:center"></td>`;
+            } else {
+                html += `<td class="num">${val != null ? val : ''}</td>`;
+            }
+        }
+    }
+    html += '<td></td><td></td></tr>';
+
     html += '</tbody></table></div>';
     return html;
 }
@@ -514,6 +512,37 @@ function bindAttendance(trainerId, groupId) {
         });
     });
 
+    // Total present (incl. subs) inputs
+    let totalPresentTimeout = null;
+    document.querySelectorAll('.total-present-input').forEach(input => {
+        input.addEventListener('change', () => {
+            const date = input.dataset.date;
+            const total = input.value === '' ? null : parseInt(input.value, 10);
+
+            const statusEl = document.getElementById('save-status');
+            statusEl.textContent = 'Opslaan...';
+            statusEl.className = 'save-status saving';
+
+            clearTimeout(totalPresentTimeout);
+            totalPresentTimeout = setTimeout(async () => {
+                await apiPost('/total-present', { trainer_id: trainerId, group_id: groupId, date, total });
+
+                await fetchData();
+                if (isAdmin()) {
+                    const r = await apiLogin(getAuth().code);
+                    if (r.data) ADMIN_DATA = r.data;
+                } else if (getTrainerId()) {
+                    const r = await apiLogin(getAuth().code);
+                    if (r.trainer) TRAINER_DATA = r.trainer;
+                }
+
+                statusEl.textContent = 'Opgeslagen';
+                statusEl.className = 'save-status saved';
+                setTimeout(() => { statusEl.textContent = ''; }, 2000);
+            }, 300);
+        });
+    });
+
     // Cancel date toggles
     document.querySelectorAll('.cancel-cb').forEach(cb => {
         cb.addEventListener('change', async () => {
@@ -556,7 +585,6 @@ function exportToCSV() {
             const cancelled = group.cancelled || [];
             const today = new Date().toISOString().slice(0, 10);
             const activeDates = group.dates.filter(d => !cancelled.includes(d) && d <= today);
-            let groupPctSum = 0;
 
             // Header
             csv += `\n${trainer.name} - ${group.name}\n`;
@@ -577,7 +605,6 @@ function exportToCSV() {
                 const total = activeDates.length;
                 const pct = total > 0 ? Math.round((count / total) * 100) : 0;
                 csv += `${player};${cells.join(';')};${count};${total};${pct}%\n`;
-                if (total > 0) { groupPctSum += pct; trainerPctSum += pct; trainerPctCount++; }
             }
 
             // Totals row
@@ -587,9 +614,26 @@ function exportToCSV() {
             });
             csv += `Totaal;${totals.join(';')};;;\n`;
 
-            // Group average
-            const groupAvg = group.players.length > 0 ? Math.round(groupPctSum / group.players.length) : 0;
+            // Totals incl. subs row
+            const totalsInclSubs = group.dates.map(d => {
+                if (cancelled.includes(d)) return '';
+                const val = group.totalPresent?.[d];
+                return val != null ? val : '';
+            });
+            csv += `Totaal (incl. invallers);${totalsInclSubs.join(';')};;;\n`;
+
+            // Group average (using totalPresent when available)
+            let groupAvg = 0;
+            if (activeDates.length > 0 && group.players.length > 0) {
+                let presentSum = 0;
+                for (const d of activeDates) {
+                    const tp = group.totalPresent?.[d];
+                    presentSum += tp != null ? tp : (group.attendance?.[d] || []).length;
+                }
+                groupAvg = Math.round((presentSum / (activeDates.length * group.players.length)) * 100);
+            }
             csv += `Groepsgemiddelde;${group.dates.map(() => '').join(';')};;;${groupAvg}%\n`;
+            if (activeDates.length > 0) { trainerPctSum += groupAvg; trainerPctCount++; }
         }
 
         // Trainer average
@@ -717,55 +761,6 @@ function bindAdmin() {
         });
     });
 
-    // Generate dates button (for existing groups)
-    document.querySelectorAll('.generate-dates-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const editor = btn.closest('.dates-editor');
-            const dayVal = editor.querySelector('.dates-day').value;
-            const startDate = editor.querySelector('.dates-start').value;
-            const endDate = editor.querySelector('.dates-end').value;
-            if (!startDate || !endDate) return alert('Selecteer start- en einddatum');
-            const dates = generateWeeklyDates(parseInt(dayVal), startDate, endDate);
-            if (dates.length === 0) return alert('Geen datums gevonden voor deze selectie');
-
-            // Render chips
-            const listEl = editor.querySelector('.dates-list');
-            listEl.innerHTML = `<p style="font-size:0.8rem;color:var(--muted);margin-bottom:4px">Klik op een datum om te markeren als vervallen</p>
-                <div class="date-chips">${dates.map(d =>
-                    `<span class="date-chip" data-date="${d}">${formatDate(d)}</span>`
-                ).join('')}</div>
-                <button type="button" class="btn-sm save-dates-btn" style="margin-top:8px">Opslaan</button>`;
-            bindDateChips(editor);
-        });
-    });
-
-    // Bind existing date chips
-    document.querySelectorAll('.dates-editor').forEach(editor => bindDateChips(editor));
-}
-
-function bindDateChips(editor) {
-    const trainerId = editor.dataset.trainerId;
-    const groupId = editor.dataset.groupId;
-
-    editor.querySelectorAll('.date-chip').forEach(chip => {
-        chip.addEventListener('click', () => {
-            chip.classList.toggle('cancelled');
-        });
-    });
-
-    editor.querySelector('.save-dates-btn')?.addEventListener('click', async () => {
-        const chips = editor.querySelectorAll('.date-chip');
-        const dates = [];
-        const cancelled = [];
-        chips.forEach(c => {
-            dates.push(c.dataset.date);
-            if (c.classList.contains('cancelled')) cancelled.push(c.dataset.date);
-        });
-        const result = await apiPost('/admin/dates', { trainer_id: trainerId, group_id: groupId, dates, cancelled });
-        if (result.data) ADMIN_DATA = result.data;
-        await fetchData();
-        navigate('');
-    });
 }
 
 // --- Init ---
