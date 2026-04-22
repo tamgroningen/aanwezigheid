@@ -49,6 +49,23 @@ async function apiPost(path, body) {
 // --- Helpers ---
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+function getDivisor(groupName) {
+    const n = groupName.toLowerCase();
+    const is16 = [
+        n => n.includes('maandag') && n.includes('speelsterkte 5'),
+        n => n.includes('dinsdag') && n.includes('speelsterkte 4'),
+        n => n.includes('dinsdag') && n.includes('selectie'),
+        n => n.includes('dinsdag') && n.includes('speelsterkte 5'),
+        n => n.includes('dinsdag') && n.includes('speelsterkte 7'),
+        n => n.includes('woensdag') && n.includes('speelsterkte 6'),
+        n => n.includes('woensdag') && n.includes('speelsterkte 4'),
+        n => n.includes('donderdag') && n.includes('selectie'),
+        n => n.includes('vrijdag') && (n.includes('speelsterkte 7') || n.includes('speelsterkte 8')),
+        n => n.includes('vrijdag') && n.includes('selectie'),
+    ];
+    return is16.some(fn => fn(n)) ? 16 : 8;
+}
+
 function pctClass(pct) {
     if (pct < 50) return 'pct-red';
     if (pct < 75) return 'pct-yellow';
@@ -109,7 +126,7 @@ function calcGroupStats(group) {
             const tp = group.totalPresent?.[d];
             presentSum += tp != null ? tp : (group.attendance?.[d] || []).length;
         }
-        avgAttendance = Math.round((presentSum / (totalSessions * group.players.length)) * 100);
+        avgAttendance = Math.round((presentSum / (totalSessions * getDivisor(group.name))) * 100);
     }
     return { playerStats, totalSessions, avgAttendance };
 }
@@ -630,7 +647,7 @@ function exportToCSV() {
                     const tp = group.totalPresent?.[d];
                     presentSum += tp != null ? tp : (group.attendance?.[d] || []).length;
                 }
-                groupAvg = Math.round((presentSum / (activeDates.length * group.players.length)) * 100);
+                groupAvg = Math.round((presentSum / (activeDates.length * getDivisor(group.name))) * 100);
             }
             csv += `Groepsgemiddelde;${group.dates.map(() => '').join(';')};;;${groupAvg}%\n`;
             if (activeDates.length > 0) { trainerPctSum += groupAvg; trainerPctCount++; }
