@@ -126,7 +126,7 @@ function calcGroupStats(group) {
             const tp = group.totalPresent?.[d];
             presentSum += tp != null ? tp : (group.attendance?.[d] || []).length;
         }
-        avgAttendance = Math.round((presentSum / (totalSessions * getDivisor(group.name))) * 100);
+        avgAttendance = Math.round((presentSum / (totalSessions * Math.min(getDivisor(group.name), group.players.length))) * 100);
     }
     return { playerStats, totalSessions, avgAttendance };
 }
@@ -647,7 +647,7 @@ function exportToCSV() {
                     const tp = group.totalPresent?.[d];
                     presentSum += tp != null ? tp : (group.attendance?.[d] || []).length;
                 }
-                groupAvg = Math.round((presentSum / (activeDates.length * getDivisor(group.name))) * 100);
+                groupAvg = Math.round((presentSum / (activeDates.length * Math.min(getDivisor(group.name), group.players.length))) * 100);
             }
             csv += `Groepsgemiddelde;${group.dates.map(() => '').join(';')};;;${groupAvg}%\n`;
             if (activeDates.length > 0) { trainerPctSum += groupAvg; trainerPctCount++; }
