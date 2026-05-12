@@ -326,13 +326,12 @@ function renderOverview() {
                 <h3>${esc(group.name)}</h3>
                 <div class="trainer-name">Trainer: ${esc(trainer.name)}</div>
                 <div class="table-wrap"><table class="data">
-                    <thead><tr><th>Speler</th><th>Aanwezig</th><th>Geoorloofd</th><th>Totaal</th><th>Percentage</th></tr></thead>
+                    <thead><tr><th>Speler</th><th>Aanwezig</th><th>Totaal</th><th>Percentage</th></tr></thead>
                     <tbody>`;
             for (const ps of stats.playerStats) {
                 html += `<tr>
                     <td>${esc(ps.player)}</td>
                     <td class="num">${ps.count}</td>
-                    <td class="num">${ps.excusedCount || 0}</td>
                     <td class="num">${ps.totalSessions}</td>
                     <td class="num ${pctClass(ps.pct)}">${ps.pct}%</td>
                 </tr>`;
@@ -406,8 +405,6 @@ function renderGroup(trainerId, groupId) {
                     <option value="present"${present ? ' selected' : ''}>Aanwezig</option>
                     <option value="excused"${excused ? ' selected' : ''}>Geoorloofd</option>
                 </select></td>`;
-            } else if (canEdit && excused) {
-                html += `<td class="num val-excused" title="Geoorloofd afwezig (ingesteld door trainingsleider)">G</td>`;
             } else if (canEdit) {
                 const selClass = present ? 'val-present' : 'val-absent';
                 html += `<td><select class="att-select ${selClass}" data-player="${esc(ps.player)}" data-date="${d}">
@@ -415,9 +412,7 @@ function renderGroup(trainerId, groupId) {
                     <option value="present"${present ? ' selected' : ''}>Aanwezig</option>
                 </select></td>`;
             } else {
-                const label = present ? '✓' : (excused ? 'G' : '');
-                const cls = present ? 'val-present' : (excused ? 'val-excused' : '');
-                html += `<td class="num ${cls}">${label}</td>`;
+                html += `<td class="num ${present ? 'val-present' : ''}">${present ? '✓' : ''}</td>`;
             }
         }
         html += `<td class="num total">${ps.count}</td>`;
@@ -637,7 +632,7 @@ function exportToCSV() {
             csv += `Speler;${group.dates.map(d => {
                 const label = formatDate(d);
                 return cancelled.includes(d) ? label + ' (vervallen)' : label;
-            }).join(';')};Aanwezig;Geoorloofd;Totaal;Percentage\n`;
+            }).join(';')};Aanwezig;Totaal;Percentage\n`;
 
             // Player rows
             for (const player of group.players) {
@@ -649,12 +644,12 @@ function exportToCSV() {
                     const excused = (group.excused?.[d] || []).includes(player);
                     if (present) count++;
                     else if (excused) excusedCount++;
-                    return present ? 'x' : (excused ? 'g' : '');
+                    return present ? 'x' : '';
                 });
                 const total = activeDates.length;
                 const effectiveSessions = total - excusedCount;
                 const pct = effectiveSessions > 0 ? Math.round((count / effectiveSessions) * 100) : 0;
-                csv += `${player};${cells.join(';')};${count};${excusedCount};${total};${pct}%\n`;
+                csv += `${player};${cells.join(';')};${count};${total};${pct}%\n`;
             }
 
             // Totals row
@@ -662,7 +657,7 @@ function exportToCSV() {
                 if (cancelled.includes(d)) return '';
                 return (group.attendance?.[d] || []).length;
             });
-            csv += `Totaal;${totals.join(';')};;;;\n`;
+            csv += `Totaal;${totals.join(';')};;;\n`;
 
             // Totals incl. subs row
             const totalsInclSubs = group.dates.map(d => {
@@ -670,7 +665,7 @@ function exportToCSV() {
                 const val = group.totalPresent?.[d];
                 return val != null ? val : '';
             });
-            csv += `Totaal (incl. invallers);${totalsInclSubs.join(';')};;;;\n`;
+            csv += `Totaal (incl. invallers);${totalsInclSubs.join(';')};;;\n`;
 
             // Group average (using totalPresent when available)
             let groupAvg = 0;
@@ -682,20 +677,20 @@ function exportToCSV() {
                 }
                 groupAvg = Math.round((presentSum / (activeDates.length * Math.min(getDivisor(group.name), group.players.length))) * 100);
             }
-            csv += `Groepsgemiddelde;${group.dates.map(() => '').join(';')};;;;${groupAvg}%\n`;
+            csv += `Groepsgemiddelde;${group.dates.map(() => '').join(';')};;;${groupAvg}%\n`;
             if (activeDates.length > 0) { trainerPctSum += groupAvg; trainerPctCount++; }
         }
 
         // Trainer average
         const trainerAvg = trainerPctCount > 0 ? Math.round(trainerPctSum / trainerPctCount) : 0;
-        csv += `\nGemiddelde ${trainer.name};;;;;${trainerAvg}%\n`;
+        csv += `\nGemiddelde ${trainer.name};;;;${trainerAvg}%\n`;
         clubPctSum += trainerPctSum;
         clubPctCount += trainerPctCount;
     }
 
     // Club average
     const clubAvg = clubPctCount > 0 ? Math.round(clubPctSum / clubPctCount) : 0;
-    csv += `\nClubgemiddelde;;;;;${clubAvg}%\n`;
+    csv += `\nClubgemiddelde;;;;${clubAvg}%\n`;
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
