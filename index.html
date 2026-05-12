@@ -406,11 +406,7 @@ function renderGroup(trainerId, groupId) {
                     <option value="excused"${excused ? ' selected' : ''}>Geoorloofd</option>
                 </select></td>`;
             } else if (canEdit) {
-                const selClass = present ? 'val-present' : 'val-absent';
-                html += `<td><select class="att-select ${selClass}" data-player="${esc(ps.player)}" data-date="${d}">
-                    <option value="">Afwezig</option>
-                    <option value="present"${present ? ' selected' : ''}>Aanwezig</option>
-                </select></td>`;
+                html += `<td><input type="checkbox" data-player="${esc(ps.player)}" data-date="${d}" ${present ? 'checked' : ''}></td>`;
             } else {
                 html += `<td class="num ${present ? 'val-present' : ''}">${present ? '✓' : ''}</td>`;
             }
@@ -512,6 +508,7 @@ function bindLogin() {
 
 let saveTimeout = null;
 function bindAttendance(trainerId, groupId) {
+    // Admin: 3-keuze dropdown (Afwezig / Aanwezig / Geoorloofd)
     document.querySelectorAll('.att-select').forEach(sel => {
         sel.addEventListener('change', () => {
             sel.className = `att-select ${sel.value === 'present' ? 'val-present' : sel.value === 'excused' ? 'val-excused' : 'val-absent'}`;
@@ -532,19 +529,38 @@ function bindAttendance(trainerId, groupId) {
             clearTimeout(saveTimeout);
             saveTimeout = setTimeout(async () => {
                 await apiPost('/attendance', { trainer_id: trainerId, group_id: groupId, date, present_players: presentPlayers });
-                if (isAdmin()) {
-                    await apiPost('/excused', { trainer_id: trainerId, group_id: groupId, date, excused_players: excusedPlayers });
-                }
+                await apiPost('/excused', { trainer_id: trainerId, group_id: groupId, date, excused_players: excusedPlayers });
 
-                // Update local data
                 await fetchData();
-                if (isAdmin()) {
-                    const r = await apiLogin(getAuth().code);
-                    if (r.data) ADMIN_DATA = r.data;
-                } else if (getTrainerId()) {
-                    const r = await apiLogin(getAuth().code);
-                    if (r.trainer) TRAINER_DATA = r.trainer;
-                }
+                const r = await apiLogin(getAuth().code);
+                if (r.data) ADMIN_DATA = r.data;
+
+                statusEl.textContent = 'Opgeslagen';
+                statusEl.className = 'save-status saved';
+                setTimeout(() => { statusEl.textContent = ''; }, 2000);
+            }, 300);
+        });
+    });
+
+    // Trainer: checkbox (Afwezig / Aanwezig)
+    document.querySelectorAll('.att-grid input[type="checkbox"]:not(.cancel-cb)').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const date = cb.dataset.date;
+            const checkboxes = document.querySelectorAll(`.att-grid input[type="checkbox"][data-date="${date}"]`);
+            const presentPlayers = [];
+            checkboxes.forEach(c => { if (c.checked && c.dataset.player) presentPlayers.push(c.dataset.player); });
+
+            const statusEl = document.getElementById('save-status');
+            statusEl.textContent = 'Opslaan...';
+            statusEl.className = 'save-status saving';
+
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(async () => {
+                await apiPost('/attendance', { trainer_id: trainerId, group_id: groupId, date, present_players: presentPlayers });
+
+                await fetchData();
+                const r = await apiLogin(getAuth().code);
+                if (r.trainer) TRAINER_DATA = r.trainer;
 
                 statusEl.textContent = 'Opgeslagen';
                 statusEl.className = 'save-status saved';
