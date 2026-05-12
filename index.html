@@ -112,11 +112,14 @@ function calcGroupStats(group) {
     const totalSessions = activeDates.length;
     const playerStats = group.players.map(player => {
         let count = 0;
+        let excusedCount = 0;
         for (const d of activeDates) {
             if ((group.attendance?.[d] || []).includes(player)) count++;
+            else if ((group.excused?.[d] || []).includes(player)) excusedCount++;
         }
-        const pct = totalSessions > 0 ? Math.round((count / totalSessions) * 100) : 0;
-        return { player, count, totalSessions, pct };
+        const effectiveSessions = totalSessions - excusedCount;
+        const pct = effectiveSessions > 0 ? Math.round((count / effectiveSessions) * 100) : 0;
+        return { player, count, totalSessions, excusedCount, pct };
     });
     // Use totalPresent (incl. subs) per date when available, otherwise count from checklist
     let avgAttendance = 0;
@@ -323,12 +326,13 @@ function renderOverview() {
                 <h3>${esc(group.name)}</h3>
                 <div class="trainer-name">Trainer: ${esc(trainer.name)}</div>
                 <div class="table-wrap"><table class="data">
-                    <thead><tr><th>Speler</th><th>Aanwezig</th><th>Totaal</th><th>Percentage</th></tr></thead>
+                    <thead><tr><th>Speler</th><th>Aanwezig</th><th>Geoorloofd</th><th>Totaal</th><th>Percentage</th></tr></thead>
                     <tbody>`;
             for (const ps of stats.playerStats) {
                 html += `<tr>
                     <td>${esc(ps.player)}</td>
                     <td class="num">${ps.count}</td>
+                    <td class="num">${ps.excusedCount || 0}</td>
                     <td class="num">${ps.totalSessions}</td>
                     <td class="num ${pctClass(ps.pct)}">${ps.pct}%</td>
                 </tr>`;
@@ -392,12 +396,28 @@ function renderGroup(trainerId, groupId) {
         for (const d of group.dates) {
             const isCancelled = cancelled.includes(d);
             const present = (group.attendance?.[d] || []).includes(ps.player);
+            const excused = (group.excused?.[d] || []).includes(ps.player);
             if (isCancelled) {
                 html += '<td class="cancelled"></td>';
+            } else if (canEdit && isAdmin()) {
+                const selClass = present ? 'val-present' : (excused ? 'val-excused' : 'val-absent');
+                html += `<td><select class="att-select ${selClass}" data-player="${esc(ps.player)}" data-date="${d}">
+                    <option value="">Afwezig</option>
+                    <option value="present"${present ? ' selected' : ''}>Aanwezig</option>
+                    <option value="excused"${excused ? ' selected' : ''}>Geoorloofd</option>
+                </select></td>`;
+            } else if (canEdit && excused) {
+                html += `<td class="num val-excused" title="Geoorloofd afwezig (ingesteld door trainingsleider)">G</td>`;
             } else if (canEdit) {
-                html += `<td><input type="checkbox" data-player="${esc(ps.player)}" data-date="${d}" ${present ? 'checked' : ''}></td>`;
+                const selClass = present ? 'val-present' : 'val-absent';
+                html += `<td><select class="att-select ${selClass}" data-player="${esc(ps.player)}" data-date="${d}">
+                    <option value="">Afwezig</option>
+                    <option value="present"${present ? ' selected' : ''}>Aanwezig</option>
+                </select></td>`;
             } else {
-                html += `<td class="num">${present ? 'x' : ''}</td>`;
+                const label = present ? '✓' : (excused ? 'G' : '');
+                const cls = present ? 'val-present' : (excused ? 'val-excused' : '');
+                html += `<td class="num ${cls}">${label}</td>`;
             }
         }
         html += `<td class="num total">${ps.count}</td>`;
@@ -497,12 +517,18 @@ function bindLogin() {
 
 let saveTimeout = null;
 function bindAttendance(trainerId, groupId) {
-    document.querySelectorAll('.att-grid input[type="checkbox"]').forEach(cb => {
-        cb.addEventListener('change', () => {
-            const date = cb.dataset.date;
-            const checkboxes = document.querySelectorAll(`.att-grid input[data-date="${date}"]`);
+    document.querySelectorAll('.att-select').forEach(sel => {
+        sel.addEventListener('change', () => {
+            sel.className = `att-select ${sel.value === 'present' ? 'val-present' : sel.value === 'excused' ? 'val-excused' : 'val-absent'}`;
+
+            const date = sel.dataset.date;
+            const selects = document.querySelectorAll(`.att-select[data-date="${date}"]`);
             const presentPlayers = [];
-            checkboxes.forEach(c => { if (c.checked) presentPlayers.push(c.dataset.player); });
+            const excusedPlayers = [];
+            selects.forEach(s => {
+                if (s.value === 'present') presentPlayers.push(s.dataset.player);
+                else if (s.value === 'excused') excusedPlayers.push(s.dataset.player);
+            });
 
             const statusEl = document.getElementById('save-status');
             statusEl.textContent = 'Opslaan...';
@@ -511,6 +537,9 @@ function bindAttendance(trainerId, groupId) {
             clearTimeout(saveTimeout);
             saveTimeout = setTimeout(async () => {
                 await apiPost('/attendance', { trainer_id: trainerId, group_id: groupId, date, present_players: presentPlayers });
+                if (isAdmin()) {
+                    await apiPost('/excused', { trainer_id: trainerId, group_id: groupId, date, excused_players: excusedPlayers });
+                }
 
                 // Update local data
                 await fetchData();
@@ -608,20 +637,24 @@ function exportToCSV() {
             csv += `Speler;${group.dates.map(d => {
                 const label = formatDate(d);
                 return cancelled.includes(d) ? label + ' (vervallen)' : label;
-            }).join(';')};Aanwezig;Totaal;Percentage\n`;
+            }).join(';')};Aanwezig;Geoorloofd;Totaal;Percentage\n`;
 
             // Player rows
             for (const player of group.players) {
                 let count = 0;
+                let excusedCount = 0;
                 const cells = group.dates.map(d => {
                     if (cancelled.includes(d)) return '';
                     const present = (group.attendance?.[d] || []).includes(player);
+                    const excused = (group.excused?.[d] || []).includes(player);
                     if (present) count++;
-                    return present ? 'x' : '';
+                    else if (excused) excusedCount++;
+                    return present ? 'x' : (excused ? 'g' : '');
                 });
                 const total = activeDates.length;
-                const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-                csv += `${player};${cells.join(';')};${count};${total};${pct}%\n`;
+                const effectiveSessions = total - excusedCount;
+                const pct = effectiveSessions > 0 ? Math.round((count / effectiveSessions) * 100) : 0;
+                csv += `${player};${cells.join(';')};${count};${excusedCount};${total};${pct}%\n`;
             }
 
             // Totals row
@@ -629,7 +662,7 @@ function exportToCSV() {
                 if (cancelled.includes(d)) return '';
                 return (group.attendance?.[d] || []).length;
             });
-            csv += `Totaal;${totals.join(';')};;;\n`;
+            csv += `Totaal;${totals.join(';')};;;;\n`;
 
             // Totals incl. subs row
             const totalsInclSubs = group.dates.map(d => {
@@ -637,7 +670,7 @@ function exportToCSV() {
                 const val = group.totalPresent?.[d];
                 return val != null ? val : '';
             });
-            csv += `Totaal (incl. invallers);${totalsInclSubs.join(';')};;;\n`;
+            csv += `Totaal (incl. invallers);${totalsInclSubs.join(';')};;;;\n`;
 
             // Group average (using totalPresent when available)
             let groupAvg = 0;
@@ -649,20 +682,20 @@ function exportToCSV() {
                 }
                 groupAvg = Math.round((presentSum / (activeDates.length * Math.min(getDivisor(group.name), group.players.length))) * 100);
             }
-            csv += `Groepsgemiddelde;${group.dates.map(() => '').join(';')};;;${groupAvg}%\n`;
+            csv += `Groepsgemiddelde;${group.dates.map(() => '').join(';')};;;;${groupAvg}%\n`;
             if (activeDates.length > 0) { trainerPctSum += groupAvg; trainerPctCount++; }
         }
 
         // Trainer average
         const trainerAvg = trainerPctCount > 0 ? Math.round(trainerPctSum / trainerPctCount) : 0;
-        csv += `\nGemiddelde ${trainer.name};;;;${trainerAvg}%\n`;
+        csv += `\nGemiddelde ${trainer.name};;;;;${trainerAvg}%\n`;
         clubPctSum += trainerPctSum;
         clubPctCount += trainerPctCount;
     }
 
     // Club average
     const clubAvg = clubPctCount > 0 ? Math.round(clubPctSum / clubPctCount) : 0;
-    csv += `\nClubgemiddelde;;;;${clubAvg}%\n`;
+    csv += `\nClubgemiddelde;;;;;${clubAvg}%\n`;
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
