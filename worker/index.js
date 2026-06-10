@@ -117,6 +117,27 @@ export default {
       return json({ ok: true });
     }
 
+    // POST /attendance-full — admin sets both present and excused in one operation
+    if (request.method === 'POST' && path === '/attendance-full') {
+      const { code, trainer_id, group_id, date, present_players, excused_players } = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, code);
+      if (!auth) return json({ error: 'Onjuiste code' }, 401);
+      if (auth.role !== 'admin' && auth.trainer_id !== trainer_id) {
+        return json({ error: 'Geen toegang' }, 403);
+      }
+      const trainer = data.trainers.find(t => t.id === trainer_id);
+      if (!trainer) return json({ error: 'Trainer niet gevonden' }, 404);
+      const group = trainer.groups.find(g => g.id === group_id);
+      if (!group) return json({ error: 'Groep niet gevonden' }, 404);
+      if (!group.attendance) group.attendance = {};
+      if (!group.excused) group.excused = {};
+      group.attendance[date] = present_players || [];
+      group.excused[date] = excused_players || [];
+      await saveData(data);
+      return json({ ok: true });
+    }
+
     // POST /total-present — trainer or admin sets total present (incl. subs) for a date
     if (request.method === 'POST' && path === '/total-present') {
       const { code, trainer_id, group_id, date, total } = await request.json();

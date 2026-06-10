@@ -528,8 +528,7 @@ function bindAttendance(trainerId, groupId) {
 
             clearTimeout(saveTimeout);
             saveTimeout = setTimeout(async () => {
-                await apiPost('/attendance', { trainer_id: trainerId, group_id: groupId, date, present_players: presentPlayers });
-                await apiPost('/excused', { trainer_id: trainerId, group_id: groupId, date, excused_players: excusedPlayers });
+                await apiPost('/attendance-full', { trainer_id: trainerId, group_id: groupId, date, present_players: presentPlayers, excused_players: excusedPlayers });
 
                 await fetchData();
                 const r = await apiLogin(getAuth().code);
