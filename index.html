@@ -328,7 +328,7 @@ function renderOverview() {
                 <div class="table-wrap"><table class="data">
                     <thead><tr><th>Speler</th><th>Aanwezig</th><th>Totaal</th><th>Percentage</th></tr></thead>
                     <tbody>`;
-            for (const ps of stats.playerStats) {
+            for (const ps of [...stats.playerStats].sort((a, b) => b.pct - a.pct)) {
                 html += `<tr>
                     <td>${esc(ps.player)}</td>
                     <td class="num">${ps.count}</td>
