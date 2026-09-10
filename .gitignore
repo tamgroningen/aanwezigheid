@@ -1,1 +1,7 @@
 .wrangler/
+
+# lokaal Genkgo-token, nooit committen
+worker/.env.local
+
+# lokale back-ups met ledennamen, niet committen
+backups/

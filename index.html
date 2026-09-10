@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TAM Presentielijst TR3</title>
+    <title>TAM Presentielijst TR1</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <nav>
-        <a href="#" class="nav-brand"><img src="logo.webp" alt="TAM" class="nav-logo">Presentielijst TR3</a>
+        <a href="#" class="nav-brand"><img src="logo.webp" alt="TAM" class="nav-logo">Presentielijst TR1</a>
         <div class="nav-right" id="nav-auth"></div>
     </nav>
     <main id="app"></main>
@@ -48,6 +48,16 @@ async function apiPost(path, body) {
 
 // --- Helpers ---
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// Het gemiddelde meet opkomst: welk deel van de groep kwam er. De deler is
+// dus het aantal spelers in de groep.
+//
+// Hier stond een vaste deler van 8 (of 16 voor de dubbele slots), die de
+// bezetting van de baan mat in plaats van de opkomst. Dat gaf percentages
+// boven de 100 zodra er meer mensen kwamen dan er plek was -- 11 aanwezig
+// gedeeld door 8 is 138%. Wil je die maat terug, gebruik dan `capacity` uit
+// het groepsprofiel in Genkgo; dat is de echte capaciteit en wordt door de
+// vereniging bijgehouden, in plaats van een lijst groepsnamen in deze code.
 
 function pctClass(pct) {
     if (pct < 50) return 'pct-red';
@@ -95,11 +105,14 @@ function calcGroupStats(group) {
     const totalSessions = activeDates.length;
     const playerStats = group.players.map(player => {
         let count = 0;
+        let excusedCount = 0;
         for (const d of activeDates) {
             if ((group.attendance?.[d] || []).includes(player)) count++;
+            else if ((group.excused?.[d] || []).includes(player)) excusedCount++;
         }
-        const pct = totalSessions > 0 ? Math.round((count / totalSessions) * 100) : 0;
-        return { player, count, totalSessions, pct };
+        const effectiveSessions = totalSessions - excusedCount;
+        const pct = effectiveSessions > 0 ? Math.round((count / effectiveSessions) * 100) : 0;
+        return { player, count, totalSessions, excusedCount, pct };
     });
     // Use totalPresent (incl. subs) per date when available, otherwise count from checklist
     let avgAttendance = 0;
@@ -132,7 +145,7 @@ function renderNav() {
 
 function renderLogin() {
     return `<div class="login-center"><div class="login-card">
-        <h1>TAM Presentielijst TR3</h1>
+        <h1>TAM Presentielijst TR1</h1>
         <p class="login-hint">Voer je trainerscode of admincode in</p>
         <form id="login-form">
             <input type="password" id="login-code" placeholder="Code" autofocus required>
@@ -308,7 +321,7 @@ function renderOverview() {
                 <div class="table-wrap"><table class="data">
                     <thead><tr><th>Speler</th><th>Aanwezig</th><th>Totaal</th><th>Percentage</th></tr></thead>
                     <tbody>`;
-            for (const ps of stats.playerStats) {
+            for (const ps of [...stats.playerStats].sort((a, b) => b.pct - a.pct)) {
                 html += `<tr>
                     <td>${esc(ps.player)}</td>
                     <td class="num">${ps.count}</td>
@@ -375,12 +388,20 @@ function renderGroup(trainerId, groupId) {
         for (const d of group.dates) {
             const isCancelled = cancelled.includes(d);
             const present = (group.attendance?.[d] || []).includes(ps.player);
+            const excused = (group.excused?.[d] || []).includes(ps.player);
             if (isCancelled) {
                 html += '<td class="cancelled"></td>';
+            } else if (canEdit && isAdmin()) {
+                const selClass = present ? 'val-present' : (excused ? 'val-excused' : 'val-absent');
+                html += `<td><select class="att-select ${selClass}" data-player="${esc(ps.player)}" data-date="${d}">
+                    <option value="">Afwezig</option>
+                    <option value="present"${present ? ' selected' : ''}>Aanwezig</option>
+                    <option value="excused"${excused ? ' selected' : ''}>Geoorloofd</option>
+                </select></td>`;
             } else if (canEdit) {
                 html += `<td><input type="checkbox" data-player="${esc(ps.player)}" data-date="${d}" ${present ? 'checked' : ''}></td>`;
             } else {
-                html += `<td class="num">${present ? 'x' : ''}</td>`;
+                html += `<td class="num ${present ? 'val-present' : ''}">${present ? '✓' : ''}</td>`;
             }
         }
         html += `<td class="num total">${ps.count}</td>`;
@@ -480,12 +501,46 @@ function bindLogin() {
 
 let saveTimeout = null;
 function bindAttendance(trainerId, groupId) {
-    document.querySelectorAll('.att-grid input[type="checkbox"]').forEach(cb => {
+    // Admin: 3-keuze dropdown (Afwezig / Aanwezig / Geoorloofd)
+    document.querySelectorAll('.att-select').forEach(sel => {
+        sel.addEventListener('change', () => {
+            sel.className = `att-select ${sel.value === 'present' ? 'val-present' : sel.value === 'excused' ? 'val-excused' : 'val-absent'}`;
+
+            const date = sel.dataset.date;
+            const selects = document.querySelectorAll(`.att-select[data-date="${date}"]`);
+            const presentPlayers = [];
+            const excusedPlayers = [];
+            selects.forEach(s => {
+                if (s.value === 'present') presentPlayers.push(s.dataset.player);
+                else if (s.value === 'excused') excusedPlayers.push(s.dataset.player);
+            });
+
+            const statusEl = document.getElementById('save-status');
+            statusEl.textContent = 'Opslaan...';
+            statusEl.className = 'save-status saving';
+
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(async () => {
+                await apiPost('/attendance-full', { trainer_id: trainerId, group_id: groupId, date, present_players: presentPlayers, excused_players: excusedPlayers });
+
+                await fetchData();
+                const r = await apiLogin(getAuth().code);
+                if (r.data) ADMIN_DATA = r.data;
+
+                statusEl.textContent = 'Opgeslagen';
+                statusEl.className = 'save-status saved';
+                setTimeout(() => { statusEl.textContent = ''; }, 2000);
+            }, 300);
+        });
+    });
+
+    // Trainer: checkbox (Afwezig / Aanwezig)
+    document.querySelectorAll('.att-grid input[type="checkbox"]:not(.cancel-cb)').forEach(cb => {
         cb.addEventListener('change', () => {
             const date = cb.dataset.date;
-            const checkboxes = document.querySelectorAll(`.att-grid input[data-date="${date}"]`);
+            const checkboxes = document.querySelectorAll(`.att-grid input[type="checkbox"][data-date="${date}"]`);
             const presentPlayers = [];
-            checkboxes.forEach(c => { if (c.checked) presentPlayers.push(c.dataset.player); });
+            checkboxes.forEach(c => { if (c.checked && c.dataset.player) presentPlayers.push(c.dataset.player); });
 
             const statusEl = document.getElementById('save-status');
             statusEl.textContent = 'Opslaan...';
@@ -495,15 +550,9 @@ function bindAttendance(trainerId, groupId) {
             saveTimeout = setTimeout(async () => {
                 await apiPost('/attendance', { trainer_id: trainerId, group_id: groupId, date, present_players: presentPlayers });
 
-                // Update local data
                 await fetchData();
-                if (isAdmin()) {
-                    const r = await apiLogin(getAuth().code);
-                    if (r.data) ADMIN_DATA = r.data;
-                } else if (getTrainerId()) {
-                    const r = await apiLogin(getAuth().code);
-                    if (r.trainer) TRAINER_DATA = r.trainer;
-                }
+                const r = await apiLogin(getAuth().code);
+                if (r.trainer) TRAINER_DATA = r.trainer;
 
                 statusEl.textContent = 'Opgeslagen';
                 statusEl.className = 'save-status saved';
@@ -596,14 +645,18 @@ function exportToCSV() {
             // Player rows
             for (const player of group.players) {
                 let count = 0;
+                let excusedCount = 0;
                 const cells = group.dates.map(d => {
                     if (cancelled.includes(d)) return '';
                     const present = (group.attendance?.[d] || []).includes(player);
+                    const excused = (group.excused?.[d] || []).includes(player);
                     if (present) count++;
+                    else if (excused) excusedCount++;
                     return present ? 'x' : '';
                 });
                 const total = activeDates.length;
-                const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                const effectiveSessions = total - excusedCount;
+                const pct = effectiveSessions > 0 ? Math.round((count / effectiveSessions) * 100) : 0;
                 csv += `${player};${cells.join(';')};${count};${total};${pct}%\n`;
             }
 

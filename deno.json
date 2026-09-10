@@ -1,0 +1,22 @@
+{
+  "tasks": {
+    "dev": "PORT=8791 deno run --allow-read --allow-net --allow-env server.js"
+  },
+  "deploy": {
+    "org": "tam",
+    "app": "aanwezigheid",
+    "include": [
+      "index.html",
+      "style.css",
+      "logo.webp"
+    ],
+    "exclude": [
+      "worker",
+      "backups",
+      ".wrangler",
+      ".claude",
+      ".git"
+    ]
+  }
+}
+

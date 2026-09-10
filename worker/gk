@@ -1,0 +1,15 @@
+#!/bin/sh
+# Doet een GET op de Genkgo integratie-API en print de JSON.
+#
+#   sh gk /organization/entry
+#   sh gk '/organization/entry?resource[parent]=8&recursive=1'
+#
+# Het token komt uit worker/.env.local (staat in .gitignore).
+
+DIR=$(dirname "$0")
+[ -f "$DIR/.env.local" ] && . "$DIR/.env.local"
+[ -z "$GENKGO_API_TOKEN" ] && { echo "Geen GENKGO_API_TOKEN. Zet hem in worker/.env.local"; exit 1; }
+
+curl -sgG "https://tam.genkgo.app/_/integration/api/v1$1" \
+  -H "X-Api-Token: $GENKGO_API_TOKEN" \
+  -H 'Accept: application/json'

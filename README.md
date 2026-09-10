@@ -11,7 +11,7 @@ Aanwezigheidstool voor trainingen bij TAM Groningen. Trainers voeren presentie i
 
 ### Aanwezigheid invoeren (trainer)
 
-1. Ga naar https://tamgroningen.github.io/aanwezigheid/
+1. Ga naar https://aanwezigheid.tam.nl
 2. Log in met je trainerscode
 3. Klik op een trainingsgroep
 4. Vink per datum de aanwezige spelers aan — wijzigingen worden automatisch opgeslagen
@@ -90,3 +90,132 @@ git add .
 git commit -m "beschrijving"
 git push
 ```
+
+## De indeling komt uit Genkgo
+
+Sinds 10 september 2026 wordt de trainingsindeling niet meer uit een Excel
+overgetypt maar uit Genkgo gelezen. De trainingsgroepen staan daar onder
+
+```
+Organisatie > Planning > 2026-2027 > Training > Trainingsronde 1
+```
+
+en dragen alles wat deze app nodig heeft in hun profiel: `x_Trainer`,
+`x_tijd`, `x_speelsterkte`, `x_baan` en `capacity`. De id van de
+trainingsronde staat in de worker (`TRAININGSRONDE`, TR1 2026-2027 = 18095)
+en is te overschrijven met de omgevingsvariabele `GENKGO_TRAININGSRONDE`.
+
+### Een nieuwe trainingsronde
+
+1. Maak de groepen in Genkgo aan onder de nieuwe trainingsronde.
+2. Zet `GENKGO_TRAININGSRONDE` op de id van die ronde.
+3. Proefdraaien -- dit verandert niets en geeft alleen het plan terug:
+
+```
+curl -s -X POST $WORKER/admin/sync \
+  -H 'Content-Type: application/json' -d '{"code":"<adminwachtwoord>"}'
+```
+
+4. Ziet het plan goed uit, dan dezelfde aanroep met `"apply": true`.
+
+De sync schrijft eerst een `backup:voor-sync-<tijd>` in KV. Aanwezigheid,
+afgelaste data, totalen en trainerscodes blijven staan; de datums per groep
+zet je zelf.
+
+### Wat de sync met opzet niet doet
+
+**Groepen verwijderen.** Een app-groep die in Genkgo niet meer bestaat wordt
+gemeld als `niet-in-genkgo` en blijft staan -- er hangt aanwezigheids-
+geschiedenis aan.
+
+**Trainers aanmaken of verplaatsen.** `x_Trainer` is vrije tekst in Genkgo.
+Een typefout daarin ("Philipa" in plaats van "Philippa") zou anders stil een
+tweede trainer met een nieuwe inlogcode opleveren, terwijl de oude code naar
+een lege lijst wijst. Onbekende trainers komen in `overgeslagen` te staan;
+alleen met `"trainers": true` mag de sync ze aanmaken.
+
+### Namen
+
+Genkgo levert doopnamen ("Tjalle Reinder Hartmans"). De app gebruikt de
+roepnaam: eerste voornaam, tussenvoegsel als het er echt een is, achternaam.
+`middlename` in Genkgo is namelijk niet consequent het tussenvoegsel -- er
+staan net zo vaak extra voornamen in. Staat een naam volledig in kleine
+letters, dan krijgt hij hoofdletters; staat er al ergens een hoofdletter, dan
+blijven we eraf (anders wordt "Lycklama à Nijeholt" een "Lycklama À
+Nijeholt").
+
+Elke speler krijgt zijn Genkgo-persoonsnummer mee in `playerIds`. Daardoor
+herkent de sync een naamswijziging als een hernoeming en werkt die ook de al
+ingevulde aanwezigheid bij, in plaats van iemand stil op afwezig te zetten.
+`playerIds` gaat niet mee in de publieke `/data`.
+
+### Toegang
+
+Het lezen gaat via het serviceaccount **API aanwezigheid** (Beheerders, cid
+19369) met de rol **API lezen** (cid 19370): alleen Organisatie -> Lezen en
+Lezen boomstructuur, geen Inloggen Admin. Het token staat als
+Cloudflare-secret `GENKGO_API_TOKEN` en is in Genkgo opnieuw te genereren op
+de Toegang-tab van dat account, waarmee het oude direct vervalt.
+
+Let op: Cloudflare staat 50 subverzoeken per aanroep toe. De sync doet er
+1 + het aantal groepen; het profiel van een groep zit al in de recursieve
+boomlijst, dus daar hoeft geen apart verzoek voor.
+
+### Herstellen
+
+```
+curl -s -X POST $WORKER/admin/backups -d '{"code":"..."}'
+curl -s -X POST $WORKER/admin/restore -d '{"code":"...","key":"backup:..."}'
+```
+
+`restore` schrijft eerst de huidige stand weg als `backup:voor-herstel-<tijd>`.
+Let op: Cloudflare KV is eventueel consistent -- een `/data` direct na een
+schrijfactie kan nog de oude stand geven. Even wachten en opnieuw lezen.
+
+`/admin/herstel-namen` bestaat voor het eenmalige geval dat vinkjes na een
+naamswijziging los zijn geraakt. Bij de eerste sync had nog geen speler een
+Genkgo-nummer, dus toen was dat nodig. Daarna niet meer.
+
+## Waar de app staat
+
+De pagina staat op **https://aanwezigheid.tam.nl**, bij Deno Deploy in de
+organisatie `tam` (app `aanwezigheid`, regio Europe/ams). De gegevens komen
+van de Cloudflare Worker; Deno levert alleen `index.html`, `style.css` en
+`logo.webp` uit.
+
+Waarom niet GitHub Pages, waar het eerst stond: de Genkgo-sessiecookie staat
+op `domain=tam.nl` en gaat dus mee naar elk subdomein. Een lid dat de pagina
+opent, stuurt daarmee zijn ingelogde tam.nl-sessie naar de host van dat
+subdomein. Bij Deno blijft die binnen infrastructuur van de vereniging.
+
+Deployen:
+
+```
+DENO_DEPLOY_TOKEN=<token> deno deploy --prod
+```
+
+`--org` en `--app` staan in `deno.json`. De app draait in **static mode**:
+Deno levert de bestanden uit `include` uit en start geen server. `server.js`
+staat in de map voor het geval we later serverlogica nodig hebben (bijvoorbeeld
+inloggen met de TAM-sessie in plaats van met een trainerscode); dan moet de
+bouwinstelling in de console van static naar dynamic met `server.js` als
+entrypoint, en moet `server.js` terug in `include`.
+
+Let op wat er in `include` staat: alles daarin is publiek opvraagbaar. De
+back-ups met ledennamen en trainerscodes, `worker/.env.local` met het
+Genkgo-token en `worker/index.js` met het adminwachtwoord horen daar dus
+nooit in.
+
+### DNS
+
+Twee CNAME's in het Genkgo-DNS-paneel (Hosting -> DNS -> tam.nl), naar
+hetzelfde model als `od.tam.nl`:
+
+```
+aanwezigheid.tam.nl.                 CNAME  alias.deno.net.
+_acme-challenge.aanwezigheid.tam.nl. CNAME  <hash>._acme.deno.net.
+```
+
+De hash krijg je van Deno Deploy bij het toevoegen van het domein. Daarna in
+de console het certificaat aanvragen (Automatic certificate ->
+Provision certificate).

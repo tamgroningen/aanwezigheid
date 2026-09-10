@@ -1,4 +1,11 @@
+import { haalIndeling, slug as slugify } from './genkgo.js';
+import { haalAlles, isTienUurInAmsterdam } from './afmeldingen.js';
+
 const ADMIN_PASSWORD = 'training2026';
+
+// Trainingsronde in de Genkgo-organisatieboom. TR1 2026-2027 = 18095.
+// Bij een nieuwe ronde alleen dit getal (of de env-variabele) verzetten.
+const TRAININGSRONDE = 18095;
 
 const NAMES = [
   'federer', 'nadal', 'alcaraz', 'sinner', 'thiem',
@@ -22,6 +29,97 @@ function validateCode(data, code) {
     if (t.code === code) return { role: 'trainer', trainer_id: t.id, trainer_name: t.name };
   }
   return null;
+}
+
+
+/**
+ * Haalt de afmeldingen op en schrijft ze weg.
+ *
+ * De afmeldingen komen in een eigen sleutel, niet in `data`. Dat is met
+ * opzet: KV kent geen transacties, en als deze run tegelijk loopt met een
+ * trainer die aanwezigheid aanvinkt, zou een gedeelde sleutel het werk van
+ * die trainer kunnen overschrijven. Nu kunnen ze elkaar niet raken.
+ *
+ * Afzeggers die niet in de spelerslijst van hun groep staan, worden apart
+ * bewaard in plaats van weggegooid. Dat gebeurt echt -- de planning in
+ * Genkgo en het groepslidmaatschap lopen soms uit elkaar -- en als je zo'n
+ * afmelding laat vallen, lijkt die persoon afwezig zonder afmelding. Dat is
+ * precies wat een trainingsboete oplevert.
+ */
+async function draaiAfmeldingen(env, { schrijf, sporen: wilSporen }) {
+  // Bij `debug` houden we bij wat er tijdens het inloggen gebeurt. Er staan
+  // alleen statuscodes en cookienamen in, nooit een wachtwoord of de inhoud
+  // van een cookie.
+  const sporen = wilSporen ? {} : null;
+  const vorig = JSON.parse(await env.AANWEZIGHEID.get('afmeldingen') || '{}');
+  const nu = new Date().toISOString();
+
+  const data = JSON.parse(await env.AANWEZIGHEID.get('data') || '{"trainers":[]}');
+  const groepen = data.trainers.flatMap((t) =>
+    (t.groups || []).filter((g) => g.genkgoId).map((g) => ({ ...g, trainer: t.name })));
+
+  if (!groepen.length) {
+    return { ok: false, melding: 'Geen groepen met een Genkgo-nummer; draai eerst /admin/sync' };
+  }
+
+  let opgehaald;
+  try {
+    opgehaald = await haalAlles(env, groepen, sporen);
+  } catch (e) {
+    const mislukt = (vorig.status?.mislukt_op_rij || 0) + 1;
+    const status = { ...vorig.status, laatsteFout: { tijd: nu, melding: e.message }, mislukt_op_rij: mislukt };
+    if (schrijf) {
+      await env.AANWEZIGHEID.put('afmeldingen', JSON.stringify({ ...vorig, status }));
+    }
+    return { ok: false, melding: e.message, sporen, mislukt_op_rij: mislukt,
+             let_op: mislukt >= 2 ? 'Twee keer op rij mislukt -- hier moet iemand naar kijken' : undefined };
+  }
+
+  // Afzeggers koppelen aan de spelers in de groep.
+  //
+  // De planningpagina toont de volledige naam uit Genkgo ("Anna Jaya
+  // Elisabeth Apte"), terwijl de app de roepnaam gebruikt ("Anna Apte").
+  // Vergelijken op de hele naam laat die twee dus niet bij elkaar komen.
+  // We koppelen op voornaam plus achternaam; de doopnamen ertussen doen er
+  // niet toe.
+  const vlak = (n) => n.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z ]/g, ' ').split(/\s+/).filter(Boolean);
+  const sleutel = (n) => { const w = vlak(n); return w.length ? `${w[0]} ${w[w.length - 1]}` : ''; };
+
+  const onbekend = [];
+  for (const g of groepen) {
+    const dagen = opgehaald.perGroep[String(g.genkgoId)] || {};
+    const spelers = new Map((g.players || []).map((p) => [sleutel(p), p]));
+    for (const [datum, d] of Object.entries(dagen)) {
+      // Naast de naam zoals Genkgo hem schrijft, bewaren we de naam zoals de
+      // app die kent. Daarop kan de presentielijst straks matchen.
+      d.gekoppeld = d.afzeggers.map((naam) => spelers.get(sleutel(naam)) || null);
+      d.afzeggers.forEach((naam, i) => {
+        if (!d.gekoppeld[i]) onbekend.push({ groep: g.name, trainer: g.trainer, datum, naam });
+      });
+    }
+  }
+
+  const nieuw = {
+    bijgewerkt: nu,
+    perGroep: opgehaald.perGroep,
+    onbekend,
+    fouten: opgehaald.fouten,
+    status: { laatsteGeslaagd: nu, laatsteFout: vorig.status?.laatsteFout || null, mislukt_op_rij: 0 },
+  };
+  if (schrijf) await env.AANWEZIGHEID.put('afmeldingen', JSON.stringify(nieuw));
+
+  const dagen = Object.values(opgehaald.perGroep).flatMap((d) => Object.values(d));
+  return {
+    ok: true,
+    geschreven: !!schrijf,
+    sporen,
+    groepen: Object.keys(opgehaald.perGroep).length,
+    fouten: opgehaald.fouten,
+    totaal_afmeldingen: dagen.reduce((n, d) => n + d.afzeggers.length, 0),
+    totaal_overnames: dagen.reduce((n, d) => n + d.overnames, 0),
+    onbekend,
+  };
 }
 
 export default {
@@ -61,7 +159,11 @@ export default {
     if (request.method === 'GET' && path === '/data') {
       const data = await getData();
       const pub = JSON.parse(JSON.stringify(data));
-      for (const t of pub.trainers) delete t.code;
+      for (const t of pub.trainers) {
+        delete t.code;
+        // playerIds zijn Genkgo-persoonsnummers; die hoeven niet het publiek in.
+        for (const g of t.groups || []) delete g.playerIds;
+      }
       return json(pub);
     }
 
@@ -94,6 +196,46 @@ export default {
       if (!group) return json({ error: 'Groep niet gevonden' }, 404);
       if (!group.attendance) group.attendance = {};
       group.attendance[date] = present_players || [];
+      await saveData(data);
+      return json({ ok: true });
+    }
+
+    // POST /excused — trainer marks excused absences for a date
+    if (request.method === 'POST' && path === '/excused') {
+      const { code, trainer_id, group_id, date, excused_players } = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, code);
+      if (!auth) return json({ error: 'Onjuiste code' }, 401);
+      if (auth.role !== 'admin' && auth.trainer_id !== trainer_id) {
+        return json({ error: 'Geen toegang' }, 403);
+      }
+      const trainer = data.trainers.find(t => t.id === trainer_id);
+      if (!trainer) return json({ error: 'Trainer niet gevonden' }, 404);
+      const group = trainer.groups.find(g => g.id === group_id);
+      if (!group) return json({ error: 'Groep niet gevonden' }, 404);
+      if (!group.excused) group.excused = {};
+      group.excused[date] = excused_players || [];
+      await saveData(data);
+      return json({ ok: true });
+    }
+
+    // POST /attendance-full — admin sets both present and excused in one operation
+    if (request.method === 'POST' && path === '/attendance-full') {
+      const { code, trainer_id, group_id, date, present_players, excused_players } = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, code);
+      if (!auth) return json({ error: 'Onjuiste code' }, 401);
+      if (auth.role !== 'admin' && auth.trainer_id !== trainer_id) {
+        return json({ error: 'Geen toegang' }, 403);
+      }
+      const trainer = data.trainers.find(t => t.id === trainer_id);
+      if (!trainer) return json({ error: 'Trainer niet gevonden' }, 404);
+      const group = trainer.groups.find(g => g.id === group_id);
+      if (!group) return json({ error: 'Groep niet gevonden' }, 404);
+      if (!group.attendance) group.attendance = {};
+      if (!group.excused) group.excused = {};
+      group.attendance[date] = present_players || [];
+      group.excused[date] = excused_players || [];
       await saveData(data);
       return json({ ok: true });
     }
@@ -215,15 +357,368 @@ export default {
       return json({ ok: true, data });
     }
 
+
+    // POST /admin/sync — haalt de indeling uit Genkgo
+    //
+    // Zonder `apply` verandert er niets: je krijgt alleen het plan te zien.
+    // Met `apply: true` wordt het uitgevoerd, na een back-up.
+    //
+    // Aanwezigheid, afgelaste data, totalen en trainerscodes blijven staan.
+    // Groepen die in Genkgo niet meer bestaan worden gemeld, niet verwijderd:
+    // daar hangt aanwezigheidsgeschiedenis aan.
+    if (request.method === 'POST' && path === '/admin/sync') {
+      const body = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, body.code);
+      if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
+      if (!env.GENKGO_API_TOKEN) return json({ error: 'GENKGO_API_TOKEN ontbreekt' }, 500);
+
+      let indeling;
+      try {
+        indeling = await haalIndeling(env, env.GENKGO_TRAININGSRONDE || TRAININGSRONDE);
+      } catch (e) {
+        return json({ error: `Genkgo niet gelezen: ${e.message}` }, 502);
+      }
+      if (!indeling.length) return json({ error: 'Genkgo gaf geen groepen terug' }, 502);
+
+      // alle app-groepen op een rij, met hun trainer erbij
+      const appGroepen = [];
+      for (const t of data.trainers) {
+        for (const g of t.groups) appGroepen.push({ trainer: t, groep: g });
+      }
+
+      // Namen vergelijken we op voornaam+achternaam, kleine letters, zonder
+      // accenten. Zo koppelt "Valerie Founier" nog niet aan "Valerie Fournier"
+      // -- dat blijft een verwijdering plus een toevoeging, en dat is eerlijk:
+      // wij weten niet of het een typefout of een andere persoon is.
+      const vlak = (n) => n.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/[^a-z ]/g, '').trim();
+
+      const gebruikt = new Set();
+      const paren = [];   // { bron, doel } -- de daadwerkelijke koppeling
+      const overgeslagen = [];
+      const plan = [];
+
+      for (const bron of indeling) {
+        // 1. eerder gekoppeld?
+        let doel = appGroepen.find((a) => a.groep.genkgoId === bron.genkgoId);
+        // 2. anders: de app-groep met de meeste dezelfde spelers
+        if (!doel) {
+          const namen = new Set(bron.spelers.map((s) => vlak(s.naam)));
+          let beste = null, score = 0;
+          for (const a of appGroepen) {
+            if (gebruikt.has(a.groep) || a.groep.genkgoId) continue;
+            const n = (a.groep.players || []).filter((p) => namen.has(vlak(p))).length;
+            if (n > score) { score = n; beste = a; }
+          }
+          const drempel = Math.max(3, Math.ceil(namen.size * 0.4));
+          if (beste && score >= drempel) doel = beste;
+        }
+
+        if (!doel) {
+          paren.push({ bron, doel: null });
+          plan.push({ soort: 'nieuwe-groep', groep: bron.naam, trainer: bron.trainer,
+                      spelers: bron.spelers.length });
+          continue;
+        }
+        gebruikt.add(doel.groep);
+        paren.push({ bron, doel });
+
+        const wijzigingen = [];
+        if (doel.groep.name !== bron.naam) {
+          wijzigingen.push({ veld: 'naam', van: doel.groep.name, naar: bron.naam });
+        }
+        if (vlak(doel.trainer.name) !== vlak(bron.trainer)) {
+          const bekend = data.trainers.some((x) => vlak(x.name) === vlak(bron.trainer));
+          wijzigingen.push({ veld: 'trainer', van: doel.trainer.name, naar: bron.trainer,
+            let_op: bekend
+              ? 'wordt niet automatisch doorgevoerd; stuur trainers:true mee'
+              : `"${bron.trainer}" bestaat niet in de app -- typefout in Genkgo, of een echt nieuwe trainer` });
+        }
+        const nu = doel.groep.players || [];
+        const ids = doel.groep.playerIds || {};
+
+        // Wie we al bij naam kennen via zijn Genkgo-id, is geen nieuwe speler
+        // maar een hernoeming. Die moet ook in de aanwezigheid doorwerken,
+        // anders staat iemand ineens als afwezig genoteerd.
+        const hernoemd = [];
+        for (const s of bron.spelers) {
+          const oudeNaam = ids[String(s.id)];
+          // Exact vergelijken, niet met vlak(): een verschil in alleen een accent
+          // of een hoofdletter ("À" tegen "à") is voor de vinkjes wel degelijk
+          // een andere naam, en zou anders onopgemerkt blijven staan.
+          if (oudeNaam && oudeNaam !== s.naam && nu.some((p) => vlak(p) === vlak(oudeNaam))) {
+            hernoemd.push({ van: oudeNaam, naar: s.naam });
+          }
+        }
+        const isHernoemd = (n) => hernoemd.some((h) => vlak(h.van) === vlak(n) || vlak(h.naar) === vlak(n));
+
+        const erbij = bron.spelers.map((s) => s.naam)
+          .filter((n) => !nu.some((p) => vlak(p) === vlak(n)) && !isHernoemd(n));
+        const eraf = nu.filter((p) => !bron.spelers.some((s) => vlak(s.naam) === vlak(p)) && !isHernoemd(p));
+        if (hernoemd.length) wijzigingen.push({ veld: 'hernoemd', namen: hernoemd });
+        if (erbij.length) wijzigingen.push({ veld: 'spelers-erbij', namen: erbij });
+        if (eraf.length) wijzigingen.push({ veld: 'spelers-eraf', namen: eraf });
+
+        if (wijzigingen.length) {
+          plan.push({ soort: 'wijziging', groep: doel.groep.name,
+                      genkgoId: bron.genkgoId, wijzigingen });
+        }
+        if (!doel.groep.genkgoId) {
+          plan.push({ soort: 'koppeling', groep: doel.groep.name, genkgoId: bron.genkgoId });
+        }
+      }
+
+      for (const a of appGroepen) {
+        if (!gebruikt.has(a.groep) && !indeling.some((b) => b.genkgoId === a.groep.genkgoId)) {
+          plan.push({ soort: 'niet-in-genkgo', groep: a.groep.name, trainer: a.trainer.name,
+                      let_op: 'blijft staan; verwijder hem zelf als de groep echt weg is' });
+        }
+      }
+
+      if (!body.apply) {
+        return json({ ok: true, toegepast: false, groepen_in_genkgo: indeling.length, plan });
+      }
+
+      // ---- uitvoeren ----
+      await env.AANWEZIGHEID.put(`backup:voor-sync-${new Date().toISOString().slice(0, 19)}`,
+        JSON.stringify(data));
+
+      // Een trainer die we nog niet kennen maken we niet zomaar aan. Aan een
+      // trainer hangt zijn inlogcode, en x_Trainer in Genkgo is vrije tekst:
+      // een typefout ("Philipa" tegen "Philippa") zou anders stil een tweede
+      // account met een nieuwe code opleveren terwijl de oude code naar een
+      // lege lijst wijst. Alleen met trainers:true mag het.
+      const zoekTrainer = (naam) => {
+        const t = data.trainers.find((x) => vlak(x.name) === vlak(naam));
+        if (t) return t;
+        if (!body.trainers) return null;
+        const nieuw = { id: slugify(naam), name: naam, code: generateCode(), groups: [] };
+        data.trainers.push(nieuw);
+        return nieuw;
+      };
+
+      // We gebruiken de koppelingen uit de planfase rechtstreeks. Eerder zocht
+      // ik de groep hier opnieuw op naam op, en groepsnamen zijn niet uniek:
+      // twee trainers hebben allebei een "Woensdag 13:00-14:00 Speelsterkte 8".
+      for (const { bron, doel } of paren) {
+        if (!doel) {
+          const t = zoekTrainer(bron.trainer);
+          if (!t) {
+            overgeslagen.push({ groep: bron.naam, trainer: bron.trainer,
+              waarom: 'onbekende trainer; controleer de spelling in Genkgo of stuur trainers:true mee' });
+            continue;
+          }
+          t.groups.push({ id: bron.id, name: bron.naam, genkgoId: bron.genkgoId,
+                          capaciteit: bron.capaciteit, baan: bron.baan,
+                          players: bron.spelers.map((s) => s.naam),
+                          playerIds: Object.fromEntries(bron.spelers.map((s) => [String(s.id), s.naam])),
+                          dates: [], cancelled: [], attendance: {}, totalPresent: {} });
+          continue;
+        }
+
+        const g = doel.groep;
+        const ids = g.playerIds || {};
+
+        // Hernoemingen ook in de al ingevulde aanwezigheid doorvoeren.
+        for (const s of bron.spelers) {
+          const oudeNaam = ids[String(s.id)];
+          if (!oudeNaam || oudeNaam === s.naam) continue;
+          for (const datum of Object.keys(g.attendance || {})) {
+            g.attendance[datum] = g.attendance[datum]
+              .map((n) => (vlak(n) === vlak(oudeNaam) ? s.naam : n));
+          }
+        }
+
+        g.genkgoId = bron.genkgoId;
+        g.name = bron.naam;
+        // Capaciteit en baan komen uit het groepsprofiel in Genkgo. De app
+        // rekent er niets mee -- het gemiddelde meet opkomst en deelt door
+        // het aantal spelers -- maar dit is wel de plek waar je de echte
+        // baancapaciteit vandaan haalt als je ooit bezetting wilt meten.
+        g.capaciteit = bron.capaciteit;
+        g.baan = bron.baan;
+        g.players = bron.spelers.map((s) => s.naam);
+        g.playerIds = Object.fromEntries(bron.spelers.map((s) => [String(s.id), s.naam]));
+        g.id = bron.id;
+        if (!g.cancelled) g.cancelled = [];
+        if (!g.attendance) g.attendance = {};
+        if (!g.totalPresent) g.totalPresent = {};
+
+        // Een trainer verplaatsen doen we alleen als daar expliciet om wordt
+        // gevraagd. Aan een trainer hangt zijn inlogcode, en een naam die in
+        // Genkgo net anders is gespeld ("Philipa" tegen "Philippa") zou hier
+        // een tweede trainer met een nieuwe code opleveren terwijl de oude
+        // code naar een lege trainer blijft wijzen.
+        if (body.trainers) {
+          const juisteTrainer = zoekTrainer(bron.trainer);
+          if (juisteTrainer && juisteTrainer !== doel.trainer) {
+            doel.trainer.groups = doel.trainer.groups.filter((x) => x !== g);
+            juisteTrainer.groups.push(g);
+          }
+        }
+      }
+
+      await saveData(data);
+      return json({ ok: true, toegepast: true, groepen_in_genkgo: indeling.length,
+                    plan, overgeslagen, data });
+    }
+
+
+    // POST /admin/backups — welke momentopnames er in de opslag staan
+    if (request.method === 'POST' && path === '/admin/backups') {
+      const { code } = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, code);
+      if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
+      const lijst = await env.AANWEZIGHEID.list({ prefix: 'backup:' });
+      return json({ ok: true, backups: lijst.keys.map((k) => k.name).sort().reverse() });
+    }
+
+    // POST /admin/restore — zet een momentopname terug
+    //
+    // De huidige stand wordt eerst zelf weer weggeschreven, zodat ook een
+    // verkeerd herstel nog terug te draaien is.
+    if (request.method === 'POST' && path === '/admin/restore') {
+      const { code, key } = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, code);
+      if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
+      if (!key || !key.startsWith('backup:')) return json({ error: 'Geen geldige sleutel' }, 400);
+
+      const raw = await env.AANWEZIGHEID.get(key);
+      if (!raw) return json({ error: `${key} bestaat niet` }, 404);
+      let terug;
+      try { terug = JSON.parse(raw); } catch { return json({ error: 'Onleesbare back-up' }, 500); }
+      if (!Array.isArray(terug.trainers)) return json({ error: 'Back-up bevat geen trainers' }, 500);
+
+      await env.AANWEZIGHEID.put(`backup:voor-herstel-${new Date().toISOString().slice(0, 19)}`,
+        JSON.stringify(data));
+      await saveData(terug);
+      const groepen = terug.trainers.flatMap((t) => t.groups || []);
+      return json({ ok: true, hersteld: key, trainers: terug.trainers.length,
+                    groepen: groepen.length,
+                    spelers: groepen.reduce((n, g) => n + (g.players || []).length, 0) });
+    }
+
+
+    // POST /admin/herstel-namen — repareert vinkjes die door een naamswijziging
+    // niet meer bij een speler horen.
+    //
+    // Nodig voor de eerste sync: toen had nog geen enkele speler zijn
+    // Genkgo-nummer, dus een gewijzigde spelling zag eruit als "de een eraf,
+    // de ander erbij" en bleef de oude naam als los vinkje achter. Daarna
+    // gebeurt dit niet meer: de sync werkt vanaf nu op nummer.
+    //
+    // Zonder `apply` verandert er niets.
+    if (request.method === 'POST' && path === '/admin/herstel-namen') {
+      const body = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, body.code);
+      if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
+
+      const plat = (n) => n.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/[^a-z]/g, '');
+      const delen = (n) => n.trim().split(/\s+/).filter(Boolean);
+
+      const gedaan = []; const onduidelijk = [];
+      for (const t of data.trainers) {
+        for (const g of t.groups) {
+          const spelers = g.players || [];
+          const kwijt = new Set();
+          for (const datum of Object.keys(g.attendance || {})) {
+            for (const n of g.attendance[datum]) if (!spelers.includes(n)) kwijt.add(n);
+          }
+          for (const n of kwijt) {
+            // 1. zelfde naam, andere hoofdletters of accenten
+            let kand = spelers.filter((p) => plat(p) === plat(n));
+            // 2. anders: zelfde voornaam of zelfde achternaam, en dan uniek
+            if (!kand.length) {
+              const w = delen(n);
+              if (w.length) {
+                const voor = plat(w[0]); const achter = plat(w[w.length - 1]);
+                kand = spelers.filter((p) => {
+                  const q = delen(p);
+                  return q.length && (plat(q[0]) === voor || plat(q[q.length - 1]) === achter);
+                });
+              }
+            }
+            if (kand.length !== 1) {
+              onduidelijk.push({ groep: g.name, naam: n, kandidaten: kand });
+              continue;
+            }
+            gedaan.push({ groep: g.name, van: n, naar: kand[0] });
+            if (body.apply) {
+              for (const datum of Object.keys(g.attendance)) {
+                g.attendance[datum] = g.attendance[datum]
+                  .map((x) => (x === n ? kand[0] : x));
+              }
+            }
+          }
+        }
+      }
+
+      if (body.apply && gedaan.length) {
+        await env.AANWEZIGHEID.put(`backup:voor-herstel-namen-${new Date().toISOString().slice(0, 19)}`,
+          JSON.stringify(await getData()));
+        await saveData(data);
+      }
+      return json({ ok: true, toegepast: !!body.apply, hersteld: gedaan, onduidelijk });
+    }
+
+
+    // POST /admin/afmeldingen — haalt de afmeldingen van vandaag op
+    //
+    // Zonder `apply` wordt er niets weggeschreven; je krijgt alleen te zien
+    // wat er gevonden is. Zo kun je de run controleren zonder gevolgen.
+    if (request.method === 'POST' && path === '/admin/afmeldingen') {
+      const body = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, body.code);
+      if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
+      const uitkomst = await draaiAfmeldingen(env, { schrijf: !!body.apply, sporen: !!body.debug });
+      return json(uitkomst, uitkomst.ok ? 200 : 502);
+    }
+
+    // POST /afmeldingen — voor trainers en beheer: wat is er opgehaald
+    if (request.method === 'POST' && path === '/afmeldingen') {
+      const { code } = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, code);
+      if (!auth) return json({ error: 'Onjuiste code' }, 401);
+
+      const opslag = JSON.parse(await env.AANWEZIGHEID.get('afmeldingen') || '{}');
+      if (auth.role === 'admin') return json({ ok: true, ...opslag });
+
+      // een trainer krijgt alleen zijn eigen groepen te zien
+      const trainer = data.trainers.find((t) => t.id === auth.trainer_id);
+      const eigen = new Set((trainer?.groups || []).map((g) => String(g.genkgoId)));
+      const perGroep = {};
+      for (const [id, dagen] of Object.entries(opslag.perGroep || {})) {
+        if (eigen.has(id)) perGroep[id] = dagen;
+      }
+      return json({ ok: true, bijgewerkt: opslag.bijgewerkt, perGroep });
+    }
+
     return json({ error: 'Not found' }, 404);
   },
 
-  // Weekly backup cron (every Sunday at 3:00 AM)
-  async scheduled(event, env) {
-    const raw = await env.AANWEZIGHEID.get('data');
-    if (raw) {
-      const date = new Date().toISOString().slice(0, 10);
-      await env.AANWEZIGHEID.put(`backup:${date}`, raw);
+  async scheduled(event, env, ctx) {
+    // Wekelijkse back-up, zondag 03:00.
+    if (event.cron === '0 3 * * SUN') {
+      const raw = await env.AANWEZIGHEID.get('data');
+      if (raw) {
+        const date = new Date().toISOString().slice(0, 10);
+        await env.AANWEZIGHEID.put(`backup:${date}`, raw);
+      }
+      return;
     }
+
+    // Afmeldingen om 10:00 Nederlandse tijd -- de uiterste afmeldtijd van de
+    // dag. De cron van Cloudflare draait op UTC en dat is 's zomers een uur
+    // naast onze tijd, dus hij vuurt om 08:00 en 09:00 UTC en we laten er
+    // hier eentje door.
+    if (!isTienUurInAmsterdam()) return;
+    ctx.waitUntil(draaiAfmeldingen(env, { schrijf: true }));
   },
 };
