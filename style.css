@@ -201,3 +201,47 @@ body.delete-mode .edit-players-detail { display: block; }
     main { padding: 12px; }
     .att-grid th, .att-grid td { padding: 4px 5px; font-size: 0.75rem; }
 }
+
+/* Afmeldingen uit Genkgo.
+   Een afgemelde speler is geen afwezige speler: dat onderscheid moet je in
+   één oogopslag zien, zonder dat het net zo hard schreeuwt als aanwezig. */
+td.is-afgemeld { background: color-mix(in srgb, var(--blue) 7%, transparent); }
+td.is-afgemeld input[type="checkbox"] { opacity: .45; }
+.afgemeld-merk {
+  display: block; font-size: .6rem; line-height: 1.1; margin-top: 2px;
+  color: var(--muted); letter-spacing: .02em;
+}
+select.att-select.is-afgemeld { border-color: color-mix(in srgb, var(--blue) 45%, transparent); }
+.legenda {
+  margin: 10px 2px 0; font-size: .78rem; line-height: 1.45; color: var(--muted);
+  max-width: 60ch;
+}
+
+/* Een voorbije training die nog niet is ingevuld. Telt niet mee in de
+   percentages, maar moet wel opvallen -- anders blijft hij stil openstaan. */
+th.nog-open { background: color-mix(in srgb, var(--yellow) 18%, transparent); }
+.open-merk {
+  display: block; font-size: .58rem; font-weight: 400; line-height: 1.1;
+  margin-top: 2px; color: var(--muted); letter-spacing: .02em;
+}
+
+/* Wat de trainer nog moet doen. Opvallend genoeg om te zien, rustig genoeg
+   om niet als foutmelding te lezen -- er is niets stuk, er staat iets open. */
+.todo {
+  display: grid; gap: 4px;
+  margin: 0 0 14px; padding: 10px 12px;
+  border-left: 3px solid var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 12%, transparent);
+  border-radius: 0 6px 6px 0;
+  font-size: .87rem; line-height: 1.5; max-width: 62ch;
+}
+.todo strong { font-weight: 650; }
+.todo span { color: var(--muted); }
+.todo em { font-style: normal; font-weight: 600; }
+
+.open-badge {
+  display: inline-block; margin-left: 8px; padding: 1px 7px;
+  border-radius: 999px; font-size: .7rem; font-weight: 600; vertical-align: middle;
+  background: color-mix(in srgb, var(--yellow) 30%, transparent); color: var(--text);
+}
+.card.heeft-open { border-left: 3px solid var(--yellow); }

@@ -26,8 +26,71 @@ function clearAuth() { localStorage.removeItem('aanwezigheid_auth'); ADMIN_DATA 
 function isAdmin() { return getAuth()?.role === 'admin'; }
 function getTrainerId() { return getAuth()?.role === 'trainer' ? getAuth().trainer_id : null; }
 
+// Afmeldingen uit Genkgo, opgehaald na het inloggen. Per Genkgo-groepsnummer
+// per datum: wie zich heeft afgemeld, en hoeveel overnames er waren.
+// Ze staan bewust niet in `/data`: dat is een openbaar adres.
+let AFMELDINGEN = {};
+
+/** De namen die zich hebben afgemeld voor deze groep op deze datum. */
+function afgemeldOp(group, date) {
+    const dag = AFMELDINGEN[String(group.genkgoId)]?.[date];
+    if (!dag) return [];
+    // `gekoppeld` bevat de naam zoals de app die kent; Genkgo schrijft
+    // doopnamen ("Anna Jaya Elisabeth Apte") waar de app "Anna Apte" heeft.
+    return (dag.gekoppeld || []).filter(Boolean);
+}
+
+/**
+ * Is deze training al ingevuld door de trainer?
+ *
+ * Een voorbije datum zonder ingevulde presentie betekent niet dat er niemand
+ * was -- het betekent dat de trainer er nog niet aan toe is gekomen. Zulke
+ * trainingen tellen daarom niet mee in de percentages; anders zakt een groep
+ * doordat de trainer nog niets heeft aangevinkt. Hetzelfde geldt voor een
+ * training die vandaag nog moet beginnen.
+ *
+ * Vinkt een trainer bewust niemand aan, dan staat er een lege lijst en telt
+ * de training wel gewoon mee.
+ */
+function isIngevuld(group, date) {
+    return (group.attendance && date in group.attendance)
+        || (group.totalPresent && date in group.totalPresent);
+}
+
+/**
+ * Trainingen die al zijn geweest maar nog niet zijn ingevuld.
+ * Nieuwste eerst, want dat is meestal degene die je zoekt.
+ */
+function openTrainingen(group) {
+    const vandaag = new Date().toISOString().slice(0, 10);
+    return group.dates
+        .filter(d => d <= vandaag && !(group.cancelled || []).includes(d) && !isIngevuld(group, d))
+        .sort().reverse();
+}
+
+function isAfgemeld(group, date, player) {
+    return afgemeldOp(group, date).includes(player);
+}
+
 // --- API ---
 async function fetchData() { const r = await fetch(SYNC_URL + '/data'); DATA = await r.json(); return DATA; }
+
+async function fetchAfmeldingen() {
+    const auth = getAuth();
+    if (!auth) return;
+    try {
+        const r = await fetch(SYNC_URL + '/afmeldingen', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: auth.code }),
+        });
+        const j = await r.json();
+        AFMELDINGEN = j.perGroep || {};
+    } catch (e) {
+        // Geen afmeldingen is vervelend maar niet fataal: de presentielijst
+        // werkt gewoon, er staat alleen niets voorgevuld.
+        AFMELDINGEN = {};
+    }
+}
 
 async function apiLogin(code) {
     const r = await fetch(SYNC_URL + '/login', {
@@ -101,14 +164,19 @@ function generateWeeklyDates(dayOfWeek, startDate, endDate) {
 
 function calcGroupStats(group) {
     const today = new Date().toISOString().slice(0, 10);
-    const activeDates = group.dates.filter(d => !(group.cancelled || []).includes(d) && d <= today);
+    const activeDates = group.dates.filter(d => !(group.cancelled || []).includes(d) && d <= today && isIngevuld(group, d));
     const totalSessions = activeDates.length;
     const playerStats = group.players.map(player => {
         let count = 0;
         let excusedCount = 0;
         for (const d of activeDates) {
             if ((group.attendance?.[d] || []).includes(player)) count++;
-            else if ((group.excused?.[d] || []).includes(player)) excusedCount++;
+            // Een afmelding via Genkgo telt hetzelfde als een handmatig
+            // geoorloofde afwezigheid: die training valt uit de noemer van
+            // deze speler. Wie zich netjes afmeldt, hoort daar in zijn
+            // percentage niet op afgerekend te worden.
+            else if ((group.excused?.[d] || []).includes(player)
+                     || isAfgemeld(group, d, player)) excusedCount++;
         }
         const effectiveSessions = totalSessions - excusedCount;
         const pct = effectiveSessions > 0 ? Math.round((count / effectiveSessions) * 100) : 0;
@@ -170,9 +238,10 @@ function renderHome() {
         }
         for (const group of trainer.groups) {
             const stats = calcGroupStats(group);
-            html += `<a href="#group/${trainerId}/${group.id}" class="card card-link">
-                <h3>${esc(group.name)}</h3>
-                <p>${group.players.length} spelers, ${stats.totalSessions} lessen, ${stats.avgAttendance}% gem. aanwezigheid</p>
+            const open = openTrainingen(group);
+            html += `<a href="#group/${trainerId}/${group.id}" class="card card-link${open.length ? ' heeft-open' : ''}">
+                <h3>${esc(group.name)}${open.length ? `<span class="open-badge">${open.length} in te vullen</span>` : ''}</h3>
+                <p>${group.players.length} spelers, ${stats.totalSessions} ${stats.totalSessions === 1 ? 'les' : 'lessen'} geteld${stats.totalSessions ? `, ${stats.avgAttendance}% gem. aanwezigheid` : ''}</p>
                 <div class="overview-bar"><div class="overview-bar-fill" style="width:${stats.avgAttendance}%;background:${barColor(stats.avgAttendance)}"></div></div>
             </a>`;
         }
@@ -366,10 +435,29 @@ function renderGroup(trainerId, groupId) {
     const cancelled = group.cancelled || [];
     const stats = calcGroupStats(group);
 
+    const vandaag = new Date().toISOString().slice(0, 10);
+
+    // Wat staat er nog open? Trainers zien dit als eerste, boven de tabel.
+    const open = openTrainingen(group);
+    if (open.length && canEdit) {
+        const lijst = open.map(formatDate).join(', ');
+        html += `<div class="todo">
+            <strong>${open.length === 1 ? 'Nog in te vullen: ' + lijst : `Nog ${open.length} trainingen in te vullen: ${lijst}`}</strong>
+            <span>Ging de training niet door? Vink hem dan aan in de rij <em>Vervallen?</em> &mdash;
+            dan telt hij voor niemand mee. Zolang een training niet is ingevuld en niet op vervallen staat,
+            telt hij nergens in mee.</span>
+        </div>`;
+    }
+
     html += '<div class="att-grid"><table><thead><tr><th class="player-name">Speler</th>';
     for (const d of group.dates) {
         const isCancelled = cancelled.includes(d);
-        html += `<th class="${isCancelled ? 'cancelled' : ''}">${formatDate(d)}</th>`;
+        // Een voorbije training die nog niet is ingevuld telt niet mee in de
+        // percentages, maar de trainer moet wel zien dat hij openstaat.
+        const open = !isCancelled && d <= vandaag && !isIngevuld(group, d);
+        const klassen = [isCancelled ? 'cancelled' : '', open ? 'nog-open' : ''].filter(Boolean).join(' ');
+        html += `<th class="${klassen}"${open ? ' title="Nog niet ingevuld -- telt niet mee"' : ''}>`
+            + formatDate(d) + (open ? '<span class="open-merk">nog invullen</span>' : '') + '</th>';
     }
     html += '<th>Totaal</th><th>%</th></tr></thead><tbody>';
 
@@ -388,20 +476,36 @@ function renderGroup(trainerId, groupId) {
         for (const d of group.dates) {
             const isCancelled = cancelled.includes(d);
             const present = (group.attendance?.[d] || []).includes(ps.player);
-            const excused = (group.excused?.[d] || []).includes(ps.player);
+            const afgemeld = isAfgemeld(group, d, ps.player);
+            const excused = (group.excused?.[d] || []).includes(ps.player) || afgemeld;
+            // Een afmelding komt uit Genkgo en is hier niet te wijzigen: de
+            // ledenadministratie is daarvan de bron. De trainer kan iemand
+            // wel alsnog aanwezig zetten -- afgemeld en toch komen gebeurt.
+            const merk = afgemeld ? ' title="Afgemeld via Genkgo" data-afgemeld="1"' : '';
             if (isCancelled) {
                 html += '<td class="cancelled"></td>';
             } else if (canEdit && isAdmin()) {
                 const selClass = present ? 'val-present' : (excused ? 'val-excused' : 'val-absent');
-                html += `<td><select class="att-select ${selClass}" data-player="${esc(ps.player)}" data-date="${d}">
-                    <option value="">Afwezig</option>
+                // Drie toestanden, en maar twee daarvan zijn een keuze:
+                // aanwezig of afwezig. "Afgemeld" komt uit Genkgo en is hier
+                // niet te zetten -- de clubregel is dat je je daar afmeldt,
+                // dus een knop die iemand alsnog geoorloofd verklaart zou een
+                // tweede bron voor hetzelfde feit zijn.
+                //
+                // Het endpoint /excused en de opgeslagen `excused` blijven
+                // bestaan; alleen de keuze is uit de lijst.
+                html += `<td${merk}><select class="att-select ${selClass}${afgemeld ? ' is-afgemeld' : ''}" data-player="${esc(ps.player)}" data-date="${d}">
+                    <option value="">${afgemeld ? 'Afgemeld' : 'Afwezig'}</option>
                     <option value="present"${present ? ' selected' : ''}>Aanwezig</option>
-                    <option value="excused"${excused ? ' selected' : ''}>Geoorloofd</option>
                 </select></td>`;
             } else if (canEdit) {
-                html += `<td><input type="checkbox" data-player="${esc(ps.player)}" data-date="${d}" ${present ? 'checked' : ''}></td>`;
+                html += `<td class="${afgemeld ? 'is-afgemeld' : ''}"${merk}>`
+                    + `<input type="checkbox" data-player="${esc(ps.player)}" data-date="${d}" ${present ? 'checked' : ''}>`
+                    + (afgemeld && !present ? '<span class="afgemeld-merk">afgemeld</span>' : '')
+                    + '</td>';
             } else {
-                html += `<td class="num ${present ? 'val-present' : ''}">${present ? '✓' : ''}</td>`;
+                html += `<td class="num ${present ? 'val-present' : (afgemeld ? 'is-afgemeld' : '')}"${merk}>`
+                    + (present ? '✓' : (afgemeld ? 'afg.' : '')) + '</td>';
             }
         }
         html += `<td class="num total">${ps.count}</td>`;
@@ -438,7 +542,26 @@ function renderGroup(trainerId, groupId) {
     }
     html += '<td></td><td></td></tr>';
 
+    // Afmeldingen en overnames uit Genkgo, per datum.
+    const heeftAfmeldingen = group.dates.some(d => AFMELDINGEN[String(group.genkgoId)]?.[d]);
+    if (heeftAfmeldingen) {
+        html += '<tr><td style="font-size:0.75rem;color:var(--muted)">Afgemeld / overnames</td>';
+        for (const d of group.dates) {
+            if (cancelled.includes(d)) { html += '<td class="cancelled"></td>'; continue; }
+            const dag = AFMELDINGEN[String(group.genkgoId)]?.[d];
+            const af = dag ? dag.afzeggers.length : 0;
+            const ov = dag ? dag.overnames : 0;
+            html += `<td class="num" style="font-size:0.75rem;color:var(--muted)">${af || ov ? `${af}${ov ? ' / ' + ov : ''}` : ''}</td>`;
+        }
+        html += '<td></td><td></td></tr>';
+    }
+
     html += '</tbody></table></div>';
+    if (heeftAfmeldingen) {
+        html += '<p class="legenda">Afmeldingen komen uit Genkgo en worden elke dag om 10:00 opgehaald, '
+            + 'de uiterste afmeldtijd. Ze tellen niet mee als afwezig. '
+            + 'Van overnames zijn geen namen bekend.</p>';
+    }
     return html;
 }
 
@@ -450,7 +573,10 @@ async function navigate(hash) {
 
     if (!DATA && hash !== 'login' && getAuth()) {
         app.innerHTML = '<p>Laden...</p>';
-        await fetchData();
+        // De afmeldingen zitten achter een code, dus die halen we apart op.
+        // Naast elkaar: als Genkgo traag is, moet de presentielijst niet
+        // daarop staan wachten.
+        await Promise.all([fetchData(), fetchAfmeldingen()]);
     }
 
     renderNav();
@@ -501,7 +627,7 @@ function bindLogin() {
 
 let saveTimeout = null;
 function bindAttendance(trainerId, groupId) {
-    // Admin: 3-keuze dropdown (Afwezig / Aanwezig / Geoorloofd)
+    // Admin: keuze tussen afwezig en aanwezig. Afgemeld komt uit Genkgo.
     document.querySelectorAll('.att-select').forEach(sel => {
         sel.addEventListener('change', () => {
             sel.className = `att-select ${sel.value === 'present' ? 'val-present' : sel.value === 'excused' ? 'val-excused' : 'val-absent'}`;
@@ -633,7 +759,7 @@ function exportToCSV() {
         for (const group of trainer.groups) {
             const cancelled = group.cancelled || [];
             const today = new Date().toISOString().slice(0, 10);
-            const activeDates = group.dates.filter(d => !cancelled.includes(d) && d <= today);
+            const activeDates = group.dates.filter(d => !cancelled.includes(d) && d <= today && isIngevuld(group, d));
 
             // Header
             csv += `\n${trainer.name} - ${group.name}\n`;
@@ -649,7 +775,8 @@ function exportToCSV() {
                 const cells = group.dates.map(d => {
                     if (cancelled.includes(d)) return '';
                     const present = (group.attendance?.[d] || []).includes(player);
-                    const excused = (group.excused?.[d] || []).includes(player);
+                    const excused = (group.excused?.[d] || []).includes(player)
+                        || isAfgemeld(group, d, player);
                     if (present) count++;
                     else if (excused) excusedCount++;
                     return present ? 'x' : '';

@@ -700,6 +700,46 @@ export default {
       return json({ ok: true, bijgewerkt: opslag.bijgewerkt, perGroep });
     }
 
+
+    // POST /admin/wis-toekomst — haalt aanwezigheid weg op datums die nog
+    // moeten komen. Per ongeluk vooruit aangevinkte trainingen tellen mee
+    // zodra die dag aanbreekt; dan staat iemand aanwezig op een training die
+    // nog niet is geweest.
+    //
+    // Zonder `apply` zie je alleen wat er weg zou gaan.
+    if (request.method === 'POST' && path === '/admin/wis-toekomst') {
+      const { code, vanaf, trainer_id, apply } = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, code);
+      if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(vanaf || '')) {
+        return json({ error: 'Geef `vanaf` als jjjj-mm-dd' }, 400);
+      }
+
+      const weg = [];
+      for (const t of data.trainers) {
+        if (trainer_id && t.id !== trainer_id) continue;
+        for (const g of t.groups) {
+          for (const soort of ['attendance', 'excused', 'totalPresent']) {
+            for (const datum of Object.keys(g[soort] || {})) {
+              if (datum < vanaf) continue;
+              const w = g[soort][datum];
+              weg.push({ trainer: t.name, groep: g.name, datum, soort,
+                         inhoud: Array.isArray(w) ? w.length : w });
+              if (apply) delete g[soort][datum];
+            }
+          }
+        }
+      }
+
+      if (apply && weg.length) {
+        await env.AANWEZIGHEID.put(`backup:voor-wissen-${new Date().toISOString().slice(0, 19)}`,
+          JSON.stringify(await getData()));
+        await saveData(data);
+      }
+      return json({ ok: true, toegepast: !!apply, aantal: weg.length, weg });
+    }
+
     return json({ error: 'Not found' }, 404);
   },
 
