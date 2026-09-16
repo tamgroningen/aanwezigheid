@@ -221,7 +221,12 @@ function calcGroupStats(group) {
     const playerStats = group.players.map(player => {
         let count = 0;
         let excusedCount = 0;
+        // Wie halverwege is ingestroomd telt alleen mee vanaf zijn eigen
+        // instapdatum. Anders staat iemand op 0% voor trainingen die al
+        // geweest waren toen hij nog in een andere groep zat.
+        const sinds = (group.playerSince || {})[player];
         for (const d of activeDates) {
+            if (sinds && d < sinds) continue;
             if ((group.attendance?.[d] || []).includes(player)) count++;
             // Een afmelding via Genkgo telt hetzelfde als een handmatig
             // geoorloofde afwezigheid: die training valt uit de noemer van
@@ -230,9 +235,12 @@ function calcGroupStats(group) {
             else if ((group.excused?.[d] || []).includes(player)
                      || isAfgemeld(group, d, player)) excusedCount++;
         }
-        const effectiveSessions = totalSessions - excusedCount;
+        const eigenSessies = sinds
+            ? activeDates.filter(d => d >= sinds).length
+            : totalSessions;
+        const effectiveSessions = eigenSessies - excusedCount;
         const pct = effectiveSessions > 0 ? Math.round((count / effectiveSessions) * 100) : 0;
-        return { player, count, totalSessions, excusedCount, effectiveSessions, pct };
+        return { player, count, totalSessions: eigenSessies, excusedCount, effectiveSessions, pct, sinds };
     });
     // Use totalPresent (incl. subs) per date when available, otherwise count from checklist
     let avgAttendance = 0;
@@ -632,6 +640,19 @@ function renderInstellingen() {
         toekomstige. Een vervallen training telt voor niemand mee.</p>
         <p>Afmeldingen vult de trainer niet in; die komen uit Genkgo. Meldt een speler zich later
         op de dag nog af, dan staat dat er de volgende ochtend in.</p>`);
+
+    html += stuk('Een speler wisselt van groep', `
+        <p>Dat verander je <strong>in Genkgo</strong>, niet hier. Klik daarna hierboven op
+        Controleren en Toepassen, dan staat het goed. Je hoeft in deze app nooit handmatig een
+        speler te verplaatsen.</p>
+        <p>De app onthoudt vanaf wanneer iemand in zijn nieuwe groep zit. Trainingen die die groep
+        al had voordat hij erbij kwam tellen niet voor hem mee, en hij krijgt er ook geen bericht
+        over. Zijn percentage begint dus gewoon bij zijn eigen eerste training.</p>
+        <p>Let op: zijn aanwezigheid bij de <strong>oude</strong> groep verhuist niet mee. Die
+        blijft daar staan, maar verdwijnt uit zijn regel in het eindoverzicht zodra hij geen lid
+        meer van die groep is. Wissel dus liefst tussen twee trainingsrondes in. Moet het toch
+        halverwege, druk dan van tevoren het eindoverzicht af, dan heb je de cijfers van de oude
+        groep nog.</p>`);
 
     html += stuk('Een nieuwe trainer', `
         <p>Zet de naam in Genkgo in het veld <code>x_Trainer</code> van zijn groepen en klik hier op

@@ -76,6 +76,10 @@ De selectie maakt de Worker, niet het script:
   van de training.
 - De sleutel is `groepId|datum|speler`. Staat die in `gemaild`, dan komt hij
   nooit meer terug.
+- `g.playerSince[naam]` houdt bij vanaf wanneer iemand in een groep zit. Bij
+  een overstap halverwege de ronde telt hij anders als afwezig bij alle
+  trainingen die de groep daarvoor had, en krijgt hij daar ook nog berichten
+  over. Geen datum betekent: zat er vanaf het begin bij.
 - `MAIL_VENSTER_DAGEN = 21`: nooit mailen over oudere trainingen. Dat is een
   noodrem, want `groepId` komt van de groepsnaam, en hernoemen in Genkgo zou
   anders de hele historie opnieuw mailbaar maken.

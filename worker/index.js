@@ -168,10 +168,14 @@ async function draaiAfmeldingen(env, { schrijf, sporen: wilSporen }) {
  * trainer zijn ingevuld. Een training die nog niet is ingevuld zegt niets:
  * dan weten we alleen dat de trainer er nog niet aan toe is gekomen.
  */
-function nietGekomen(data, perGroep) {
-  const vandaag = new Intl.DateTimeFormat('en-CA', {
+function vandaagInAmsterdam() {
+  return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Amsterdam', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date());
+}
+
+function nietGekomen(data, perGroep) {
+  const vandaag = vandaagInAmsterdam();
 
   const uit = [];
   for (const trainer of data.trainers) {
@@ -191,6 +195,8 @@ function nietGekomen(data, perGroep) {
         ]);
         for (const speler of g.players || []) {
           if (aanwezig.has(speler) || afgemeld.has(speler)) continue;
+          // Zat hij toen nog niet in deze groep, dan gaat het hem niet aan.
+          if ((g.playerSince || {})[speler] && datum < g.playerSince[speler]) continue;
           uit.push({
             sleutel: `${g.id}|${datum}|${speler}`,
             speler, datum, groep: g.name, trainer: trainer.name,
@@ -670,6 +676,20 @@ export default {
           for (const datum of Object.keys(g.attendance || {})) {
             g.attendance[datum] = g.attendance[datum]
               .map((n) => (vlak(n) === vlak(oudeNaam) ? s.naam : n));
+          }
+        }
+
+        // Onthouden vanaf wanneer iemand in deze groep zit. Zonder dat telt
+        // een speler die halverwege overstapt als afwezig bij alle trainingen
+        // die de groep daarvoor had, en krijgt hij daar ook nog berichten
+        // over. Wie er al stond krijgt geen datum en telt dus vanaf het begin.
+        if (!g.playerSince) g.playerSince = {};
+        if (Object.keys(g.attendance || {}).length) {
+          const alAanwezig = new Set((g.players || []).map(vlak));
+          for (const sp of bron.spelers) {
+            if (!alAanwezig.has(vlak(sp.naam)) && !g.playerSince[sp.naam]) {
+              g.playerSince[sp.naam] = vandaagInAmsterdam();
+            }
           }
         }
 
