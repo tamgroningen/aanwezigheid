@@ -94,7 +94,7 @@ function bericht_(regel) {
   var wanneer = datumInWoorden_(regel.datum);
   var dag = wanneer.split(' ')[0];
 
-  var onderwerp = 'Je was ' + dag + ' niet op training en je had je niet afgemeld';
+  var onderwerp = 'Afwezig training ' + dag;
 
   var r = [];
   r.push('Beste ' + voornaam_(regel.speler) + ',');
