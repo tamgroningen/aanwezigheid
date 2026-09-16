@@ -1,7 +1,11 @@
 import { haalIndeling, vindTrainingsronde, slug as slugify } from './genkgo.js';
 import { haalAlles, isTienUurInAmsterdam } from './afmeldingen.js';
 
-const ADMIN_PASSWORD = 'training2026';
+// Het adminwachtwoord komt uit een Cloudflare-secret, niet uit deze code: de
+// repo is openbaar. Zetten met:
+//   npx wrangler secret put ADMIN_PASSWORD
+// Ontbreekt het secret, dan werkt geen enkel /admin-eindpunt. Liever dicht dan
+// per ongeluk open.
 
 // De map Planning in de Genkgo-organisatieboom. Daaronder staat per seizoen
 // een map "2026-2027", daarin "Training", en daarin de trainingsrondes. De app
@@ -51,8 +55,8 @@ function inDeToekomst(datum) {
   return String(datum || '') > vandaag;
 }
 
-function validateCode(data, code) {
-  if (code === ADMIN_PASSWORD) return { role: 'admin' };
+function validateCode(data, code, adminWachtwoord) {
+  if (adminWachtwoord && code === adminWachtwoord) return { role: 'admin' };
   for (const t of data.trainers) {
     if (t.code === code) return { role: 'trainer', trainer_id: t.id, trainer_name: t.name };
   }
@@ -286,7 +290,7 @@ export default {
     if (request.method === 'POST' && path === '/login') {
       const { code } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth) return json({ ok: false, error: 'Onjuiste code' }, 401);
       if (auth.role === 'admin') {
         return json({ ok: true, ...auth, data });
@@ -300,7 +304,7 @@ export default {
     if (request.method === 'POST' && path === '/attendance') {
       const { code, trainer_id, group_id, date, present_players } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth) return json({ error: 'Onjuiste code' }, 401);
       if (auth.role !== 'admin' && auth.trainer_id !== trainer_id) {
         return json({ error: 'Geen toegang' }, 403);
@@ -322,7 +326,7 @@ export default {
     if (request.method === 'POST' && path === '/excused') {
       const { code, trainer_id, group_id, date, excused_players } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth) return json({ error: 'Onjuiste code' }, 401);
       if (auth.role !== 'admin' && auth.trainer_id !== trainer_id) {
         return json({ error: 'Geen toegang' }, 403);
@@ -341,7 +345,7 @@ export default {
     if (request.method === 'POST' && path === '/attendance-full') {
       const { code, trainer_id, group_id, date, present_players, excused_players } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth) return json({ error: 'Onjuiste code' }, 401);
       if (auth.role !== 'admin' && auth.trainer_id !== trainer_id) {
         return json({ error: 'Geen toegang' }, 403);
@@ -365,7 +369,7 @@ export default {
     if (request.method === 'POST' && path === '/total-present') {
       const { code, trainer_id, group_id, date, total } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth) return json({ error: 'Onjuiste code' }, 401);
       if (auth.role !== 'admin' && auth.trainer_id !== trainer_id) {
         return json({ error: 'Geen toegang' }, 403);
@@ -391,7 +395,7 @@ export default {
     if (request.method === 'POST' && path === '/cancel') {
       const { code, trainer_id, group_id, date, cancel } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth) return json({ error: 'Onjuiste code' }, 401);
       if (auth.role !== 'admin' && auth.trainer_id !== trainer_id) {
         return json({ error: 'Geen toegang' }, 403);
@@ -414,7 +418,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/trainer') {
       const { code, action, trainer_id, name } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
 
       if (action === 'add') {
@@ -432,7 +436,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/group') {
       const { code, action, trainer_id, group_id, name } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
 
       const trainer = data.trainers.find(t => t.id === trainer_id);
@@ -452,7 +456,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/players') {
       const { code, trainer_id, group_id, players } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
 
       const trainer = data.trainers.find(t => t.id === trainer_id);
@@ -468,7 +472,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/dates') {
       const { code, trainer_id, group_id, dates, cancelled } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
 
       const trainer = data.trainers.find(t => t.id === trainer_id);
@@ -493,7 +497,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/sync') {
       const body = await request.json();
       const data = await getData();
-      const auth = validateCode(data, body.code);
+      const auth = validateCode(data, body.code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
       if (!env.GENKGO_API_TOKEN) return json({ error: 'GENKGO_API_TOKEN ontbreekt' }, 500);
 
@@ -717,7 +721,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/backups') {
       const { code } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
       const lijst = await env.AANWEZIGHEID.list({ prefix: 'backup:' });
       return json({ ok: true, backups: lijst.keys.map((k) => k.name).sort().reverse() });
@@ -730,7 +734,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/restore') {
       const { code, key } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
       if (!key || !key.startsWith('backup:')) return json({ error: 'Geen geldige sleutel' }, 400);
 
@@ -762,7 +766,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/herstel-namen') {
       const body = await request.json();
       const data = await getData();
-      const auth = validateCode(data, body.code);
+      const auth = validateCode(data, body.code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
 
       const plat = (n) => n.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
@@ -822,7 +826,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/afmeldingen') {
       const body = await request.json();
       const data = await getData();
-      const auth = validateCode(data, body.code);
+      const auth = validateCode(data, body.code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
       const uitkomst = await draaiAfmeldingen(env, { schrijf: !!body.apply, sporen: !!body.debug });
       return json(uitkomst, uitkomst.ok ? 200 : 502);
@@ -832,7 +836,7 @@ export default {
     if (request.method === 'POST' && path === '/afmeldingen') {
       const { code } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth) return json({ error: 'Onjuiste code' }, 401);
 
       const opslag = JSON.parse(await env.AANWEZIGHEID.get('afmeldingen') || '{}');
@@ -858,7 +862,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/wis-toekomst') {
       const { code, vanaf, trainer_id, apply } = await request.json();
       const data = await getData();
-      const auth = validateCode(data, code);
+      const auth = validateCode(data, code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(vanaf || '')) {
         return json({ error: 'Geef `vanaf` als jjjj-mm-dd' }, 400);
@@ -896,7 +900,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/niet-gekomen') {
       const body = await request.json();
       const data = await getData();
-      const auth = validateCode(data, body.code);
+      const auth = validateCode(data, body.code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
 
       // De trainingsleider kan de mails uitzetten vanuit de app. Dan geven we
@@ -975,7 +979,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/export') {
       const body = await request.json();
       const data = await getData();
-      const auth = validateCode(data, body.code);
+      const auth = validateCode(data, body.code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
 
       return json({
@@ -994,7 +998,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/mail-aan') {
       const body = await request.json();
       const data = await getData();
-      const auth = validateCode(data, body.code);
+      const auth = validateCode(data, body.code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
       if (typeof body.aan !== 'boolean') return json({ error: 'Geef `aan` mee' }, 400);
 
@@ -1007,7 +1011,7 @@ export default {
     if (request.method === 'POST' && path === '/admin/gemaild') {
       const body = await request.json();
       const data = await getData();
-      const auth = validateCode(data, body.code);
+      const auth = validateCode(data, body.code, env.ADMIN_PASSWORD);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
       if (!Array.isArray(body.sleutels)) return json({ error: 'Geef `sleutels` mee' }, 400);
 
