@@ -119,8 +119,10 @@ curl -s -X POST $WORKER/admin/sync \
 4. Ziet het plan goed uit, dan dezelfde aanroep met `"apply": true`.
 
 De sync schrijft eerst een `backup:voor-sync-<tijd>` in KV. Aanwezigheid,
-afgelaste data, totalen en trainerscodes blijven staan; de datums per groep
-zet je zelf.
+afgelaste data, totalen en trainerscodes blijven staan. De lesdagen hoef je
+niet meer te zetten: die komen uit de planning in Genkgo. De app leest ze uit
+de afmeldingen die elke ochtend om 10:00 worden opgehaald, en valt terug op
+wat er in de app staat als die planning ontbreekt.
 
 ### Wat de sync met opzet niet doet
 
@@ -191,20 +193,28 @@ subdomein. Bij Deno blijft die binnen infrastructuur van de vereniging.
 Deployen:
 
 ```
-DENO_DEPLOY_TOKEN=<token> deno deploy --prod
+DENO_DEPLOY_TOKEN=<token> deno deploy --prod publiek
 ```
 
-`--org` en `--app` staan in `deno.json`. De app draait in **static mode**:
-Deno levert de bestanden uit `include` uit en start geen server. `server.js`
-staat in de map voor het geval we later serverlogica nodig hebben (bijvoorbeeld
-inloggen met de TAM-sessie in plaats van met een trainerscode); dan moet de
-bouwinstelling in de console van static naar dynamic met `server.js` als
-entrypoint, en moet `server.js` terug in `include`.
+**Die laatste `publiek` is geen detail.** De nieuwe `deno deploy`, de opvolger
+van `deployctl`, leest de `include` en `exclude` uit `deno.json` niet meer en
+uploadt standaard alles onder de map die je opgeeft. Laat je `publiek` weg,
+dan gaan `worker/.env.local` met het Genkgo-token, `worker/index.js` met het
+adminwachtwoord en `backups/` met ledennamen en trainerscodes gewoon mee. Op
+16-09-2026 gebeurde dat: 65 bestanden in plaats van 3. Die revisie mislukte en
+is nooit uitgerold, maar de les staat.
 
-Let op wat er in `include` staat: alles daarin is publiek opvraagbaar. De
-back-ups met ledennamen en trainerscodes, `worker/.env.local` met het
-Genkgo-token en `worker/index.js` met het adminwachtwoord horen daar dus
-nooit in.
+Daarom liggen de drie publieke bestanden in een eigen map `publiek/`. Alles
+wat daarin ligt is openbaar opvraagbaar, alles daarbuiten kan niet mee. Zet er
+dus niets anders in.
+
+`--org` en `--app` staan in `deno.json`. De app draait in **static mode**:
+Deno levert de bestanden uit `publiek/` uit en start geen server. `server.js`
+staat in de projectmap voor het geval we later serverlogica nodig hebben
+(bijvoorbeeld inloggen met de TAM-sessie in plaats van met een trainerscode);
+dan moet de bouwinstelling in de console van static naar dynamic met
+`server.js` als entrypoint. Hij serveert uit diezelfde map `publiek/`, zodat
+lokaal draaien en uitrollen hetzelfde doen.
 
 ### DNS
 
