@@ -30,6 +30,11 @@ function getTrainerId() { return getAuth()?.role === 'trainer' ? getAuth().train
 // per datum: wie zich heeft afgemeld, en hoeveel overnames er waren.
 // Ze staan bewust niet in `/data`: dat is een openbaar adres.
 let AFMELDINGEN = {};
+// De rest van wat /afmeldingen teruggeeft: wanneer hij voor het laatst is
+// gelukt, of hij op rij mislukt, en welke namen niet te koppelen waren. Dat
+// hoort niet in de presentielijst maar wel op de instellingenpagina, want het
+// is het enige waaraan je ziet of de koppeling nog leeft.
+let AFMELDINGEN_META = {};
 
 /**
  * De lesdagen van een groep.
@@ -118,10 +123,13 @@ async function fetchAfmeldingen() {
         });
         const j = await r.json();
         AFMELDINGEN = j.perGroep || {};
+        AFMELDINGEN_META = { bijgewerkt: j.bijgewerkt, status: j.status,
+                             onbekend: j.onbekend, fouten: j.fouten };
     } catch (e) {
         // Geen afmeldingen is vervelend maar niet fataal: de presentielijst
         // werkt gewoon, er staat alleen niets voorgevuld.
         AFMELDINGEN = {};
+        AFMELDINGEN_META = { fout: String(e && e.message || e) };
     }
 }
 
@@ -154,6 +162,17 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 // gedeeld door 8 is 138%. Wil je die maat terug, gebruik dan `capacity` uit
 // het groepsprofiel in Genkgo; dat is de echte capaciteit en wordt door de
 // vereniging bijgehouden, in plaats van een lijst groepsnamen in deze code.
+
+/**
+ * Percentage tonen. Nul meegetelde trainingen is geen nul procent: er is dan
+ * gewoon nog niets gemeten, bijvoorbeeld omdat de trainer nog niets heeft
+ * ingevuld of omdat iemand zich voor alles had afgemeld. Dat als rode 0%
+ * tonen leest als slechte opkomst, en daar hangen boetes aan.
+ */
+function pctCel(ps) {
+    if (!ps.effectiveSessions) return '<td class="num leeg">-</td>';
+    return `<td class="num ${pctClass(ps.pct)}">${ps.pct}%</td>`;
+}
 
 function pctClass(pct) {
     if (pct < 50) return 'pct-red';
@@ -213,7 +232,7 @@ function calcGroupStats(group) {
         }
         const effectiveSessions = totalSessions - excusedCount;
         const pct = effectiveSessions > 0 ? Math.round((count / effectiveSessions) * 100) : 0;
-        return { player, count, totalSessions, excusedCount, pct };
+        return { player, count, totalSessions, excusedCount, effectiveSessions, pct };
     });
     // Use totalPresent (incl. subs) per date when available, otherwise count from checklist
     let avgAttendance = 0;
@@ -234,6 +253,7 @@ function renderNav() {
     const auth = getAuth();
     if (isAdmin()) {
         el.innerHTML = `<span class="nav-role">Trainingsleider</span>
+            <a href="#instellingen" class="nav-link">Instellingen</a>
             <a href="#" class="nav-link" id="logout-btn">Uitloggen</a>`;
     } else if (auth?.role === 'trainer') {
         el.innerHTML = `<span class="nav-role">${esc(auth.trainer_name)}</span>
@@ -306,7 +326,10 @@ function renderHome() {
                     <strong>Totaal clubgemiddelde</strong>
                     <span class="pct ${pctClass(clubAvg)}" style="margin-left:8px;font-size:1rem">${clubAvg}%</span>
                 </div>
-                <button class="btn-sm" id="export-btn">Exporteer naar spreadsheet</button>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <a href="#eind" class="btn-sm">Eindoverzicht</a>
+                    <button class="btn-sm" id="export-btn">Exporteer naar spreadsheet</button>
+                </div>
             </div>
             <div class="overview-bar" style="margin-top:8px"><div class="overview-bar-fill" style="width:${clubAvg}%;background:${barColor(clubAvg)}"></div></div>
         </div>`;
@@ -320,21 +343,7 @@ function renderHome() {
         ${isAdmin() ? '<button class="btn-sm btn-muted" id="toggle-delete-btn">Verwijdermodus</button>' : ''}
     </div>`;
 
-    // De indeling uit Genkgo halen, zonder terminal en zonder Floris. Eerst
-    // een proefdraai die alleen laat zien wat er zou veranderen; pas als dat
-    // klopt kan het worden toegepast.
-    if (isAdmin()) {
-        html += `<div class="sync card" style="margin-bottom:16px">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-                <div>
-                    <strong>Indeling uit Genkgo</strong>
-                    <span class="sync-uitleg">Haalt groepen, spelers en trainers op zoals ze in Genkgo staan.</span>
-                </div>
-                <button class="btn-sm" id="sync-btn">Controleren</button>
-            </div>
-            <div id="sync-uitslag"></div>
-        </div>`;
-    }
+
 
     if (isAdmin()) {
         html += `<details style="margin-bottom:16px">
@@ -437,18 +446,257 @@ function renderOverview() {
                 <h3>${esc(group.name)}</h3>
                 <div class="trainer-name">Trainer: ${esc(trainer.name)}</div>
                 <div class="table-wrap"><table class="data">
-                    <thead><tr><th>Speler</th><th>Aanwezig</th><th>Totaal</th><th>Percentage</th></tr></thead>
+                    <thead><tr><th>Speler</th><th class="num">Aanwezig</th><th class="num">Afgemeld</th>
+                        <th class="num">Meegeteld</th><th class="num">Percentage</th></tr></thead>
                     <tbody>`;
             for (const ps of [...stats.playerStats].sort((a, b) => b.pct - a.pct)) {
                 html += `<tr>
                     <td>${esc(ps.player)}</td>
                     <td class="num">${ps.count}</td>
-                    <td class="num">${ps.totalSessions}</td>
-                    <td class="num ${pctClass(ps.pct)}">${ps.pct}%</td>
+                    <td class="num${ps.excusedCount ? '' : ' leeg'}">${ps.excusedCount || '-'}</td>
+                    <td class="num">${ps.effectiveSessions}</td>
+                    ${pctCel(ps)}
                 </tr>`;
             }
             html += '</tbody></table></div></div>';
         }
+    }
+    return html;
+}
+
+/** "16-09-2026 om 10:00" plus hoe lang geleden dat was. */
+function tijdstip(iso) {
+    if (!iso) return 'onbekend';
+    const d = new Date(iso);
+    const uren = Math.round((Date.now() - d) / 36e5);
+    const geleden = uren < 1 ? 'zojuist' : uren < 24 ? `${uren} uur geleden`
+        : `${Math.round(uren / 24)} dagen geleden`;
+    return `${d.toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })} (${geleden})`;
+}
+
+/**
+ * Instellingen en uitleg voor de trainingsleider.
+ *
+ * Dit scherm bestaat zodat de app niet afhangt van wie hem gebouwd heeft.
+ * Alles wat je moet weten om hem draaiende te houden staat hier, inclusief
+ * wat er vanzelf gebeurt en wat je zelf moet doen bij een nieuwe ronde.
+ */
+function renderInstellingen() {
+    const src = ADMIN_DATA || DATA;
+    const meta = AFMELDINGEN_META || {};
+    const st = meta.status || {};
+    const groepen = src.trainers.flatMap(t => t.groups);
+
+    // Een groep zonder planning in Genkgo krijgt nooit lesdagen of
+    // afmeldingen. Dat is stil misgegaan toen een donderdaggroep geen planning
+    // had, dus het hoort hier zichtbaar te zijn.
+    const zonderPlanning = groepen.filter(g =>
+        !Object.keys(AFMELDINGEN[String(g.genkgoId)] || {}).length);
+    const openTotaal = groepen.reduce((n, g) => n + openTrainingen(g).length, 0);
+    const mislukt = st.mislukt_op_rij || 0;
+    const ronde = (src.genkgo || {}).ronde, seizoen = (src.genkgo || {}).seizoen;
+
+    const meldingen = [];
+    if (mislukt >= 2) meldingen.push(`De ophaal uit Genkgo is ${mislukt} keer op rij mislukt.
+        Laatste fout: ${esc(st.laatsteFout?.melding || 'onbekend')}`);
+    if (zonderPlanning.length) meldingen.push(`${zonderPlanning.length}
+        ${zonderPlanning.length === 1 ? 'groep heeft' : 'groepen hebben'} geen planning in Genkgo:
+        ${zonderPlanning.map(g => esc(g.name)).join(', ')}. Die groep krijgt geen lesdagen
+        en geen afmeldingen tot de planning er staat.`);
+
+    let html = `<a href="#" class="back-link">&larr; Terug</a>
+        <h1>Instellingen en uitleg</h1>
+        <p class="lead">Voor de trainingsleider. Hier staat hoe de app aan zijn gegevens komt,
+        wat er vanzelf gebeurt en wat je zelf moet doen.</p>`;
+
+    // --- status ---
+    html += `<div class="card inst-status">
+        <h2>Status</h2>
+        <dl class="inst-dl">
+            <dt>Afmeldingen laatst opgehaald</dt><dd>${esc(tijdstip(meta.bijgewerkt || st.laatsteGeslaagd))}</dd>
+            <dt>Trainingsronde</dt><dd>${ronde ? esc(`${seizoen?.naam || ''} ${ronde.naam}`.trim())
+                : 'nog niet vastgelegd, draai een keer de indeling'}</dd>
+            <dt>Groepen</dt><dd>${groepen.length}, verdeeld over ${src.trainers.length} trainers</dd>
+            <dt>Nog in te vullen trainingen</dt><dd>${openTotaal}</dd>
+        </dl>`;
+    for (const m of meldingen) html += `<p class="sync-let-op">${m}</p>`;
+    if (!meldingen.length) html += '<p class="sync-gelijk">Geen bijzonderheden.</p>';
+    html += '</div>';
+
+    // --- sync ---
+    html += `<div class="card sync">
+        <h2>Indeling uit Genkgo</h2>
+        <p>Haalt de groepen, spelers en trainers op zoals ze nu in Genkgo staan. Eerst een
+        controle die niets verandert; je ziet dan wat er zou gebeuren en kunt daarna toepassen.</p>
+        <button class="btn-sm" id="sync-btn">Controleren</button>
+        <div id="sync-uitslag"></div>
+    </div>`;
+
+    // --- uitleg ---
+    const stuk = (titel, inhoud) => `<details class="inst"><summary>${titel}</summary>${inhoud}</details>`;
+
+    html += '<h2 class="inst-kop">Hoe het werkt</h2>';
+
+    html += stuk('Wie kan wat', `
+        <p><strong>Trainers</strong> loggen in met hun eigen code en zien alleen hun eigen groepen.
+        Zij vinken per training aan wie er was. De code staat achter hun naam in het overzicht.</p>
+        <p><strong>De trainingsleider</strong> logt in met de admincode en ziet alles: alle groepen,
+        alle percentages, deze pagina en de knop om de indeling op te halen.</p>
+        <p>Wijzigingen worden meteen opgeslagen, er is geen opslaanknop.</p>`);
+
+    html += stuk('Waar de gegevens vandaan komen', `
+        <p>Alles komt uit Genkgo. Deze app houdt zelf niets bij behalve de vinkjes.</p>
+        <ul>
+            <li><strong>Groepen, spelers en trainers</strong> komen uit de organisatieboom, onder
+            Planning &rsaquo; seizoen &rsaquo; Training &rsaquo; trainingsronde. Die worden opgehaald
+            als je hierboven op Controleren klikt.</li>
+            <li><strong>De lesdagen</strong> komen uit de planning van elke groep in Genkgo. Zet je
+            daar een training bij of verplaats je er een, dan volgt de presentielijst vanzelf.
+            Je hoeft in deze app dus geen datums in te voeren.</li>
+            <li><strong>De afmeldingen</strong> komen van dezelfde planningpagina. Wie zich netjes
+            heeft afgemeld telt niet als afwezig en zakt niet in zijn percentage.</li>
+        </ul>
+        <p>Staat er iets fout in de app, kijk dan eerst in Genkgo. Negen van de tien keer zit het
+        daar, en dan is het na de eerstvolgende ophaal vanzelf goed.</p>`);
+
+    html += stuk('Wat er vanzelf gebeurt', `
+        <ul>
+            <li><strong>Elke ochtend om 10:00</strong> worden de afmeldingen en de lesdagen uit
+            Genkgo opgehaald. Tien uur is de uiterste afmeldtijd, dus dan is het beeld compleet.</li>
+            <li><strong>Elke zondag om 03:00</strong> wordt er een reservekopie van alle vinkjes
+            gemaakt.</li>
+        </ul>
+        <p>De indeling zelf wordt niet automatisch opgehaald. Dat is met opzet: je wilt zien wat er
+        verandert voordat het gebeurt.</p>`);
+
+    html += stuk('Een nieuwe trainingsronde', `
+        <ol>
+            <li>Maak de groepen in Genkgo aan onder de nieuwe trainingsronde. Dat mag over meerdere
+            dagen; de app blijft ondertussen gewoon de lopende ronde tonen.</li>
+            <li>Is de nieuwe ronde compleet, klik dan hierboven op Controleren. Je ziet dan staan
+            dat er een volgende ronde klaarstaat en hoeveel groepen die heeft.</li>
+            <li>Klopt het, dan Toepassen. Vanaf dat moment werkt de app met de nieuwe ronde.</li>
+        </ol>
+        <p>De vinkjes van de vorige ronde blijven bewaard. Er hoeft niets in de code te veranderen,
+        ook niet aan het begin van een nieuw seizoen.</p>`);
+
+    html += stuk('Een nieuwe trainer', `
+        <p>Zet de naam in Genkgo in het veld <code>x_Trainer</code> van zijn groepen en klik hier op
+        Controleren. De app meldt dan dat er een onbekende trainer is en vraagt of je hem wilt
+        toevoegen.</p>
+        <p>Let goed op de schrijfwijze: die moet overal hetzelfde zijn. Staat er ergens
+        &ldquo;Philipa&rdquo; en elders &ldquo;Philippa&rdquo;, dan krijg je twee trainers met twee
+        codes, waarvan er eentje een lege lijst heeft. Daarom voegt de app ze niet vanzelf toe.</p>
+        <p>Na het toevoegen staat zijn code achter zijn naam in het overzicht. Die geef je aan hem
+        door; hij hoeft hem maar één keer per apparaat in te voeren.</p>`);
+
+    html += stuk('Als er iets misgaat', `
+        <p><strong>Een trainer ziet geen groepen.</strong> Dan staat zijn naam in Genkgo net anders
+        geschreven dan in de app. Verbeter hem in Genkgo en haal de indeling opnieuw op.</p>
+        <p><strong>Een groep heeft geen lesdagen.</strong> Dan ontbreekt de planning in Genkgo. Vul
+        die aan; de volgende ochtend staat het goed, of klik hier op Controleren en Toepassen.</p>
+        <p><strong>Iemand staat afwezig terwijl hij zich had afgemeld.</strong> Kijk of hij in Genkgo
+        in de goede groep staat. Afmeldingen van iemand die de groep niet in staat kunnen we niet
+        koppelen.</p>
+        <p><strong>De status hierboven meldt mislukte ophalen.</strong> Twee keer op rij is geen
+        toeval; dan is er iets veranderd aan Genkgo of is het wachtwoord verlopen. Dat is werk voor
+        wie de app beheert.</p>`);
+
+    html += stuk('Aan het eind van de ronde', `
+        <p>Via <a href="#eind">Eindoverzicht</a> krijg je een overzicht per trainer of per speler
+        dat je kunt afdrukken of als pdf bewaren. Handig voor de trainingsboetes en voor het
+        overleg met de trainers.</p>
+        <p>Wil je met de cijfers rekenen, gebruik dan Exporteer naar spreadsheet op de
+        hoofdpagina.</p>`);
+
+    return html;
+}
+
+function bindInstellingen() {
+    document.getElementById('sync-btn')?.addEventListener('click', () => syncDraaien(false));
+}
+
+/**
+ * Eindoverzicht, bedoeld om af te drukken of als pdf te bewaren.
+ * Per trainer (met zijn groepen eronder) of per speler (alfabetisch).
+ */
+function renderEind(modus) {
+    const src = ADMIN_DATA || DATA;
+    const perSpeler = modus === 'speler';
+    const ronde = (src.genkgo || {}).ronde;
+
+    let html = `<a href="#" class="back-link">&larr; Terug</a>
+        <div class="eind-kop">
+            <div>
+                <h1>Eindoverzicht${ronde ? ` &mdash; ${esc(ronde.naam)}` : ''}</h1>
+                <p class="lead">Aanwezigheid over alle ingevulde trainingen. Wie zich via Genkgo
+                heeft afgemeld telt niet mee: die training valt uit zijn noemer, vandaar de kolom
+                <em>Meegeteld</em>. Trainingen die nog niet zijn ingevuld tellen nergens in mee.</p>
+            </div>
+            <div class="eind-knoppen">
+                <a href="#eind/trainer" class="btn-sm${perSpeler ? ' btn-muted' : ''}">Per trainer</a>
+                <a href="#eind/speler" class="btn-sm${perSpeler ? '' : ' btn-muted'}">Per speler</a>
+                <button class="btn-sm" onclick="window.print()">Afdrukken</button>
+            </div>
+        </div>`;
+
+    if (perSpeler) {
+        // Eén regel per speler per groep, op naam gesorteerd. Iemand die in
+        // twee groepen zit staat dus twee keer; dat is met opzet, want zijn
+        // opkomst kan per groep verschillen.
+        const regels = [];
+        for (const t of src.trainers) {
+            for (const g of t.groups) {
+                for (const ps of calcGroupStats(g).playerStats) {
+                    regels.push({ ...ps, groep: g.name, trainer: t.name });
+                }
+            }
+        }
+        regels.sort((a, b) => a.player.localeCompare(b.player, 'nl'));
+        html += `<div class="table-wrap"><table class="data">
+            <thead><tr><th>Speler</th><th>Groep</th><th>Trainer</th>
+                <th class="num">Aanwezig</th><th class="num">Afgemeld</th>
+                <th class="num">Meegeteld</th><th class="num">%</th></tr></thead><tbody>`;
+        for (const r of regels) {
+            html += `<tr><td>${esc(r.player)}</td><td>${esc(r.groep)}</td><td>${esc(r.trainer)}</td>
+                <td class="num">${r.count}</td>
+                <td class="num${r.excusedCount ? '' : ' leeg'}">${r.excusedCount || '-'}</td>
+                <td class="num">${r.effectiveSessions}</td>
+                ${pctCel(r)}</tr>`;
+        }
+        html += '</tbody></table></div>';
+        if (!regels.length) html += '<p class="empty">Nog niets ingevuld.</p>';
+        return html;
+    }
+
+    for (const t of src.trainers) {
+        if (!t.groups.length) continue;
+        let som = 0, aantal = 0;
+        for (const g of t.groups) {
+            const st = calcGroupStats(g);
+            if (st.totalSessions > 0) { som += st.avgAttendance; aantal++; }
+        }
+        const gem = aantal ? Math.round(som / aantal) : 0;
+        html += `<section class="eind-trainer">
+            <h2>${esc(t.name)} <span class="pct ${pctClass(gem)}">${gem}% gemiddeld</span></h2>`;
+        for (const g of t.groups) {
+            const st = calcGroupStats(g);
+            html += `<h3>${esc(g.name)}
+                <span class="eind-sub">${g.players.length} spelers, ${st.totalSessions}
+                ${st.totalSessions === 1 ? 'training' : 'trainingen'} geteld</span></h3>
+                <div class="table-wrap"><table class="data">
+                <thead><tr><th>Speler</th><th class="num">Aanwezig</th>
+                    <th class="num">Afgemeld</th><th class="num">Meegeteld</th>
+                    <th class="num">%</th></tr></thead><tbody>`;
+            for (const ps of [...st.playerStats].sort((a, b) => b.pct - a.pct)) {
+                html += `<tr><td>${esc(ps.player)}</td><td class="num">${ps.count}</td>
+                    <td class="num${ps.excusedCount ? '' : ' leeg'}">${ps.excusedCount || '-'}</td>
+                    <td class="num">${ps.effectiveSessions}</td>
+                    ${pctCel(ps)}</tr>`;
+            }
+            html += '</tbody></table></div>';
+        }
+        html += '</section>';
     }
     return html;
 }
@@ -654,6 +902,13 @@ async function navigate(hash) {
         bindLogin();
     } else if (hash === 'overview') {
         app.innerHTML = renderOverview();
+    } else if (hash === 'instellingen') {
+        if (!isAdmin()) { location.hash = ''; return; }
+        app.innerHTML = renderInstellingen();
+        bindInstellingen();
+    } else if (hash === 'eind' || hash.startsWith('eind/')) {
+        if (!isAdmin()) { location.hash = ''; return; }
+        app.innerHTML = renderEind(hash.split('/')[1] || 'trainer');
     } else if (hash === 'admin') {
         location.hash = '';
         return;

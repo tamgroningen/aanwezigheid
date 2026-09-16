@@ -26,6 +26,28 @@ Aanwezigheidstool voor trainingen bij TAM Groningen. Trainers voeren presentie i
    - Lesdagen als vervallen markeren (klik op de datum-chip)
 3. Klik op "Volledig overzicht per speler" voor een tabel met percentages per speler
 
+### Instellingen en uitleg
+
+De trainingsleider heeft rechtsboven een knop **Instellingen**. Daar staat de
+status (wanneer de afmeldingen voor het laatst zijn opgehaald, welke ronde
+draait, hoeveel trainingen er openstaan, en waarschuwingen zoals een groep
+zonder planning), de knop om de indeling uit Genkgo te halen, en uitleg over
+hoe alles samenhangt: waar de gegevens vandaan komen, wat er vanzelf gebeurt,
+wat je doet bij een nieuwe ronde of een nieuwe trainer, en wat te doen als er
+iets misgaat.
+
+Die pagina is bedoeld voor Niels, Daphne en hun opvolgers, zodat de app niet
+afhangt van wie hem gebouwd heeft. Verandert er iets aan de werking, werk dan
+ook die tekst bij.
+
+### Eindoverzicht
+
+Aan het eind van een trainingsronde geeft **Eindoverzicht** een afdrukbaar
+overzicht, per trainer of per speler. De kolommen zijn Aanwezig, Afgemeld,
+Meegeteld en het percentage: het percentage rekent over de meegetelde
+trainingen, want wie zich netjes afmeldt valt uit zijn eigen noemer. Is er
+niets meegeteld, dan staat er een streepje in plaats van 0%.
+
 ### Kleuren
 
 - **Groen**: >75% aanwezigheid

@@ -264,3 +264,39 @@ th.nog-open { background: color-mix(in srgb, var(--yellow) 18%, transparent); }
 .sync-klaar { margin: 6px 0; color: var(--green); font-weight: 600; }
 .sync-plan { margin: 6px 0 10px; padding-left: 18px; }
 .sync-plan ul { margin: 2px 0 6px; padding-left: 16px; color: var(--muted); }
+
+/* Instellingen en uitleg. Bedoeld om te lezen, dus wat rustiger dan de rest. */
+.lead { color: var(--muted); max-width: 62ch; margin: -4px 0 16px; }
+.inst-status h2, .sync h2 { font-size: 1rem; margin: 0 0 8px; }
+.inst-dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin: 0; font-size: .88rem; }
+.inst-dl dt { color: var(--muted); }
+.inst-dl dd { margin: 0; font-weight: 600; }
+.inst-kop { font-size: 1.05rem; margin: 22px 0 8px; }
+details.inst {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 14px; margin-bottom: 8px; background: #fff;
+}
+details.inst > summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
+details.inst[open] > summary { margin-bottom: 8px; }
+details.inst p, details.inst li { font-size: .88rem; line-height: 1.6; max-width: 66ch; }
+details.inst ul, details.inst ol { padding-left: 18px; }
+details.inst code {
+  background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: .85em;
+}
+
+/* Eindoverzicht: op het scherm bruikbaar, op papier netjes. */
+.eind-kop { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.eind-knoppen { display: flex; gap: 8px; flex-wrap: wrap; }
+.eind-trainer { margin-bottom: 26px; break-inside: avoid; }
+.eind-trainer h2 { font-size: 1.05rem; border-bottom: 2px solid var(--border); padding-bottom: 4px; }
+.eind-trainer h3 { font-size: .92rem; margin: 14px 0 6px; }
+.eind-sub { font-weight: 400; color: var(--muted); font-size: .82rem; margin-left: 6px; }
+
+@media print {
+  nav, .back-link, .eind-knoppen, .btn-sm { display: none !important; }
+  main { padding: 0; }
+  .eind-trainer, table { break-inside: avoid; }
+  a[href]::after { content: none !important; }
+}
+.inst-status .sync-gelijk, .inst-status .sync-let-op { margin-top: 12px; }
+td.num.leeg { color: var(--border); }
