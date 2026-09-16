@@ -5,18 +5,6 @@
   "deploy": {
     "org": "tam",
     "app": "aanwezigheid",
-    "include": [
-      "index.html",
-      "style.css",
-      "logo.webp"
-    ],
-    "exclude": [
-      "worker",
-      "backups",
-      ".wrangler",
-      ".claude",
-      ".git"
-    ]
+    "_let_op": "De nieuwe 'deno deploy' leest include/exclude hier NIET. Rol daarom altijd de map publiek/ uit: deno deploy --prod publiek"
   }
 }
-
