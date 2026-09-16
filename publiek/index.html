@@ -766,8 +766,12 @@ function renderGroup(trainerId, groupId) {
         // Een voorbije training die nog niet is ingevuld telt niet mee in de
         // percentages, maar de trainer moet wel zien dat hij openstaat.
         const open = !isCancelled && d <= vandaag && !isIngevuld(group, d);
-        const klassen = [isCancelled ? 'cancelled' : '', open ? 'nog-open' : ''].filter(Boolean).join(' ');
-        html += `<th class="${klassen}"${open ? ' title="Nog niet ingevuld -- telt niet mee"' : ''}>`
+        const komtNog = d > vandaag;
+        const klassen = [isCancelled ? 'cancelled' : '', open ? 'nog-open' : '',
+                         komtNog ? 'komt-nog' : ''].filter(Boolean).join(' ');
+        const tip = open ? ' title="Nog niet ingevuld -- telt niet mee"'
+            : komtNog ? ' title="Deze training is nog niet geweest"' : '';
+        html += `<th class="${klassen}"${tip}>`
             + formatDate(d) + (open ? '<span class="open-merk">nog invullen</span>' : '') + '</th>';
     }
     html += '<th>Totaal</th><th>%</th></tr></thead><tbody>';
@@ -795,6 +799,13 @@ function renderGroup(trainerId, groupId) {
             const merk = afgemeld ? ' title="Afgemeld via Genkgo" data-afgemeld="1"' : '';
             if (isCancelled) {
                 html += '<td class="cancelled"></td>';
+            } else if (d > vandaag) {
+                // Een trainer vult in wat er is gebeurd, dus nooit vooruit.
+                // Er stonden vinklijsten klaar tot in december; die telden
+                // pas mee zodra de dag aanbrak en niemand zag dat aankomen.
+                // De worker weigert zulke invoer ook, dit is de zichtbare
+                // helft daarvan.
+                html += '<td class="komt-nog"></td>';
             } else if (canEdit && isAdmin()) {
                 const selClass = present ? 'val-present' : (excused ? 'val-excused' : 'val-absent');
                 // Drie toestanden, en maar twee daarvan zijn een keuze:
@@ -820,7 +831,9 @@ function renderGroup(trainerId, groupId) {
             }
         }
         html += `<td class="num total">${ps.count}</td>`;
-        html += `<td class="num pct ${pctClass(ps.pct)}">${ps.pct}%</td></tr>`;
+        html += ps.effectiveSessions
+            ? `<td class="num pct ${pctClass(ps.pct)}">${ps.pct}%</td></tr>`
+            : '<td class="num pct leeg">-</td></tr>';
     }
 
     // Totals row
@@ -842,6 +855,8 @@ function renderGroup(trainerId, groupId) {
         const isCancelled = cancelled.includes(d);
         if (isCancelled) {
             html += '<td class="cancelled"></td>';
+        } else if (d > vandaag) {
+            html += '<td class="komt-nog"></td>';
         } else {
             const val = group.totalPresent?.[d];
             if (canEdit) {

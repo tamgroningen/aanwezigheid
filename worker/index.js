@@ -28,6 +28,25 @@ function seedData() {
   return { trainers: [] };
 }
 
+/**
+ * Een trainer vult in wat er is gebeurd, dus nooit vooruit.
+ *
+ * Tot 16-09-2026 kon dat wel, en er stonden 20 vinklijsten klaar op datums tot
+ * in december. Die tellen niet mee zolang de dag nog niet is aangebroken en
+ * gaan daarna stil meedoen, inclusief mensen die als afwezig genoteerd staan
+ * voor een training die nog moest komen. Vandaar deze grendel in de worker:
+ * het scherm verbergt de vakjes ook, maar dat is maar een scherm.
+ *
+ * Afmeldingen mogen wel vooruit lopen. Die komen uit Genkgo en worden hier
+ * niet door een trainer ingevuld.
+ */
+function inDeToekomst(datum) {
+  const vandaag = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Amsterdam', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  return String(datum || '') > vandaag;
+}
+
 function validateCode(data, code) {
   if (code === ADMIN_PASSWORD) return { role: 'admin' };
   for (const t of data.trainers) {
@@ -196,6 +215,9 @@ export default {
         return json({ error: 'Geen toegang' }, 403);
       }
       const trainer = data.trainers.find(t => t.id === trainer_id);
+      if (inDeToekomst(date)) {
+        return json({ error: 'Deze training is nog niet geweest; invullen kan tot en met vandaag' }, 400);
+      }
       if (!trainer) return json({ error: 'Trainer niet gevonden' }, 404);
       const group = trainer.groups.find(g => g.id === group_id);
       if (!group) return json({ error: 'Groep niet gevonden' }, 404);
@@ -234,6 +256,9 @@ export default {
         return json({ error: 'Geen toegang' }, 403);
       }
       const trainer = data.trainers.find(t => t.id === trainer_id);
+      if (inDeToekomst(date)) {
+        return json({ error: 'Deze training is nog niet geweest; invullen kan tot en met vandaag' }, 400);
+      }
       if (!trainer) return json({ error: 'Trainer niet gevonden' }, 404);
       const group = trainer.groups.find(g => g.id === group_id);
       if (!group) return json({ error: 'Groep niet gevonden' }, 404);
@@ -255,6 +280,9 @@ export default {
         return json({ error: 'Geen toegang' }, 403);
       }
       const trainer = data.trainers.find(t => t.id === trainer_id);
+      if (inDeToekomst(date)) {
+        return json({ error: 'Deze training is nog niet geweest; invullen kan tot en met vandaag' }, 400);
+      }
       if (!trainer) return json({ error: 'Trainer niet gevonden' }, 404);
       const group = trainer.groups.find(g => g.id === group_id);
       if (!group) return json({ error: 'Groep niet gevonden' }, 404);

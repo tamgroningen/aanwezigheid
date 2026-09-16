@@ -300,3 +300,12 @@ details.inst code {
 }
 .inst-status .sync-gelijk, .inst-status .sync-let-op { margin-top: 12px; }
 td.num.leeg { color: var(--border); }
+
+/* Een training die nog moet komen. Daar valt niets in te vullen: een trainer
+   noteert wat er is gebeurd. Afmeldingen mogen wel vooruit lopen, die komen
+   uit Genkgo en staan in hun eigen regel. */
+th.komt-nog { color: var(--muted); font-weight: 500; }
+td.komt-nog { background: repeating-linear-gradient(
+  135deg, transparent, transparent 4px,
+  color-mix(in srgb, var(--border) 45%, transparent) 4px,
+  color-mix(in srgb, var(--border) 45%, transparent) 5px); }
