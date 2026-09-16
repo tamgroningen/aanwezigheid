@@ -583,11 +583,35 @@ function renderInstellingen() {
         <ul>
             <li><strong>Elke ochtend om 10:00</strong> worden de afmeldingen en de lesdagen uit
             Genkgo opgehaald. Afmelden kan tot 09:00 uur, dus om tien uur is het beeld compleet.</li>
-            <li><strong>Elke zondag om 03:00</strong> wordt er een reservekopie van alle vinkjes
-            gemaakt.</li>
+            <li><strong>Elke ochtend om 11:00</strong> gaan de berichten uit naar wie niet kwam
+            opdagen zonder afmelding.</li>
+            <li><strong>Elke zondag</strong> wordt er een reservekopie van alle vinkjes gemaakt, op
+            drie plekken: bij Cloudflare, op Drive onder fiscus@tam.nl in de map
+            <em>Aanwezigheid trainingen</em>, en op de laptop van de beheerder. De presentie bepaalt
+            de trainingsboetes, dus die mag niet aan één plek hangen.</li>
         </ul>
         <p>De indeling zelf wordt niet automatisch opgehaald. Dat is met opzet: je wilt zien wat er
         verandert voordat het gebeurt.</p>`);
+
+    html += stuk('De mail aan wie niet kwam opdagen', `
+        <p>Wie afwezig was en zich niet had afgemeld krijgt een bericht vanaf
+        <strong>fiscus@tam.nl</strong>. Daarin staat dat hij gemist is, hoe je je afmeldt en wat
+        het kost als je dat niet doet, met een link naar het boetebeleid.</p>
+        <p>Wanneer precies: de mail gaat pas als iemand <strong>24 uur onveranderd op afwezig
+        staat</strong> nadat de trainer is gaan invullen. Een trainer die halverwege is of zich
+        vertikt, of die de lijst later nog bijwerkt, stuurt dus niemand iets.</p>
+        <ul>
+            <li>Niemand krijgt twee keer een bericht over dezelfde training.</li>
+            <li>Over trainingen van langer dan drie weken geleden gaat niets meer uit.</li>
+            <li>Wie zich in Genkgo had afgemeld valt er automatisch buiten.</li>
+        </ul>
+        <p><strong>Een speler zegt dat hij er wel was.</strong> Dat kan, want de presentie komt van
+        de trainer. Laat hem contact opnemen met zijn trainer, die zet het vinkje alsnog. Dat staat
+        ook in de mail. Er gaat geen nieuw bericht uit als het rechtgezet wordt.</p>
+        <p>Wil je het tijdelijk stilleggen, bijvoorbeeld in een vakantie of als er iets raars in de
+        lijst staat, zet dan hierboven het vinkje <em>Automatische afwezigheidsmail aan</em> uit.
+        Wat er intussen bijkomt gaat alsnog mee zodra je het weer aanzet, er raakt dus niemand
+        buiten beeld.</p>`);
 
     html += stuk('Een nieuwe trainingsronde', `
         <ol>
@@ -599,6 +623,15 @@ function renderInstellingen() {
         </ol>
         <p>De vinkjes van de vorige ronde blijven bewaard. Er hoeft niets in de code te veranderen,
         ook niet aan het begin van een nieuw seizoen.</p>`);
+
+    html += stuk('Wat een trainer wel en niet kan', `
+        <p>Invullen kan <strong>tot en met vandaag</strong>. Trainingen die nog moeten komen staan
+        er wel, maar zijn niet aan te vinken. Dat voorkomt dat iemand per ongeluk vooruit invult en
+        dat er mails uitgaan over een training die nog niet geweest is.</p>
+        <p>Een trainer kan wel altijd een training als <strong>vervallen</strong> markeren, ook een
+        toekomstige. Een vervallen training telt voor niemand mee.</p>
+        <p>Afmeldingen vult de trainer niet in; die komen uit Genkgo. Meldt een speler zich later
+        op de dag nog af, dan staat dat er de volgende ochtend in.</p>`);
 
     html += stuk('Een nieuwe trainer', `
         <p>Zet de naam in Genkgo in het veld <code>x_Trainer</code> van zijn groepen en klik hier op
@@ -620,7 +653,10 @@ function renderInstellingen() {
         koppelen.</p>
         <p><strong>De status hierboven meldt mislukte ophalen.</strong> Twee keer op rij is geen
         toeval; dan is er iets veranderd aan Genkgo of is het wachtwoord verlopen. Dat is werk voor
-        wie de app beheert.</p>`);
+        wie de app beheert.</p>
+        <p><strong>Er ging een bericht uit dat niet had gemoeten.</strong> Zet dan eerst hierboven
+        het vinkje voor de automatische mail uit, dan gaat er niets meer de deur uit terwijl je
+        uitzoekt wat er mis is. Daarna kun je het rustig weer aanzetten.</p>`);
 
     html += stuk('Aan het eind van de ronde', `
         <p>Via <a href="#eind">Eindoverzicht</a> krijg je een overzicht per trainer of per speler
@@ -628,6 +664,22 @@ function renderInstellingen() {
         overleg met de trainers.</p>
         <p>Wil je met de cijfers rekenen, gebruik dan Exporteer naar spreadsheet op de
         hoofdpagina.</p>`);
+
+    html += stuk('Bij een bestuurswissel', `
+        <p>De app blijft gewoon draaien; er hoeft niets overgezet te worden. Wat je wel moet
+        doorgeven:</p>
+        <ul>
+            <li><strong>De admincode</strong> aan de volgende trainingsleider. Daarmee kom je op
+            deze pagina.</li>
+            <li><strong>De trainerscodes</strong> staan achter de namen in het overzicht. Blijft een
+            trainer, dan blijft zijn code.</li>
+        </ul>
+        <p>De berichten aan wie niet kwam opdagen gaan vanaf <strong>fiscus@tam.nl</strong> en zijn
+        ondertekend met de naam van de fiscus. Wisselt die, laat de naam onder de mail dan
+        aanpassen, anders komen leden met vragen bij de verkeerde persoon uit. Dat is een kleine
+        ingreep voor wie de app beheert.</p>
+        <p>Dat geldt ook voor de reservekopie op Drive: die staat onder hetzelfde account. Zorg dat
+        de nieuwe fiscus erbij kan.</p>`);
 
     return html;
 }
