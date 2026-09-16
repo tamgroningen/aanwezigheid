@@ -145,40 +145,67 @@ function stuur_(adres, m) {
  * aan de beurt zou zijn.
  */
 function verstuurNietGekomen(droog) {
+  // Eerst de hele lijst ophalen, pas daarna versturen. Afvinken verandert de
+  // lijst bij de Worker, dus wie tijdens het versturen doorbladert vraagt om
+  // overgeslagen of dubbele regels.
+  var regels = [];
+  var gezien = {};
   var vanaf = 0;
-  var verstuurd = 0, zonderAdres = 0, mislukt = 0;
-
   while (true) {
     var res = worker_('/admin/niet-gekomen', { adressen: true, vanaf: vanaf });
+    if (res.uit) { Logger.log('De automatische afwezigheidsmail staat uit.'); return 'staat uit'; }
     if (!res.regels.length) break;
-
-    var gelukt = [];
     for (var i = 0; i < res.regels.length; i++) {
-      var regel = res.regels[i];
-      if (!regel.mail) {
-        // Geen adres in Genkgo. Niet afvinken: dan blijft hij staan en zien we
-        // hem morgen opnieuw, en kan iemand het adres aanvullen.
-        Logger.log('GEEN ADRES: ' + regel.speler + ' (' + regel.datum + ')');
-        zonderAdres++;
-        continue;
-      }
-      if (droog) { Logger.log('ZOU MAILEN: ' + regel.speler + ' <' + regel.mail + '> ' + regel.datum); continue; }
-      try {
-        stuur_(regel.mail, bericht_(regel));
-        gelukt.push(regel.sleutel);
-        verstuurd++;
-      } catch (e) {
-        Logger.log('MISLUKT: ' + regel.speler + ': ' + e);
-        mislukt++;
-      }
+      var r = res.regels[i];
+      if (gezien[r.sleutel]) continue; // dezelfde regel nooit twee keer
+      gezien[r.sleutel] = true;
+      regels.push(r);
     }
-    if (gelukt.length) worker_('/admin/gemaild', { sleutels: gelukt });
-
     if (!res.rest) break;
     vanaf += res.regels.length;
   }
 
-  var samenvatting = 'verstuurd ' + verstuurd + ', zonder adres ' + zonderAdres + ', mislukt ' + mislukt;
+  var verstuurd = 0, zonderAdres = 0, mislukt = 0;
+  for (var j = 0; j < regels.length; j++) {
+    var regel = regels[j];
+
+    if (!regel.mail) {
+      // Geen adres in Genkgo. Niet afvinken: dan blijft hij staan en zien we
+      // hem morgen opnieuw, en kan iemand het adres aanvullen.
+      Logger.log('GEEN ADRES: ' + regel.speler + ' (' + regel.datum + ')');
+      zonderAdres++;
+      continue;
+    }
+
+    if (droog) {
+      Logger.log('ZOU MAILEN: ' + regel.speler + ' <' + regel.mail + '> ' + regel.datum);
+      continue;
+    }
+
+    try {
+      stuur_(regel.mail, bericht_(regel));
+      verstuurd++;
+    } catch (e) {
+      Logger.log('MISLUKT: ' + regel.speler + ': ' + e);
+      mislukt++;
+      continue;
+    }
+
+    // Meteen afvinken, niet pas aan het eind. Tussen versturen en afvinken mag
+    // zo min mogelijk misgaan, want dat is het enige moment waarop iemand een
+    // bericht morgen nog een keer zou kunnen krijgen. Lukt het afvinken niet,
+    // dan stoppen we de hele run.
+    try {
+      worker_('/admin/gemaild', { sleutels: [regel.sleutel] });
+    } catch (e) {
+      Logger.log('AFVINKEN MISLUKT na het bericht aan ' + regel.speler + ' (' + regel.datum
+               + '). Run gestopt om dubbele berichten te voorkomen.');
+      throw e;
+    }
+  }
+
+  var samenvatting = 'verstuurd ' + verstuurd + ', zonder adres ' + zonderAdres
+                   + ', mislukt ' + mislukt;
   Logger.log(samenvatting);
   return samenvatting;
 }

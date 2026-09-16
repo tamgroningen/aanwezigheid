@@ -12,6 +12,10 @@ const ADMIN_PASSWORD = 'training2026';
 // app gebruikt die ronde, wat er verder ook onder Planning staat.
 const PLANNING_MAP = 3433;
 
+// Hoe ver terug we nog mailen over een gemiste training. Een trainer die laat
+// invult haalt het nog; een administratief ongeluk van maanden geleden niet.
+const MAIL_VENSTER_DAGEN = 21;
+
 const NAMES = [
   'federer', 'nadal', 'alcaraz', 'sinner', 'thiem',
   'swiatek', 'medvedev', 'dimitrov', 'zverev', 'raducanu', 'fritz',
@@ -912,7 +916,16 @@ export default {
       const telling = {};
       for (const r of alles) telling[r.speler] = (telling[r.speler] || 0) + 1;
 
-      let regels = klaar.map((r) => ({ ...r, keer: telling[r.speler] || 1 }));
+      // Noodrem: nooit mailen over een training van lang geleden. Als er iets
+      // misgaat in de administratie, bijvoorbeeld doordat groepen in Genkgo
+      // hernoemd worden en de sleutels dus veranderen, kan dat zo nooit een
+      // golf berichten over oude trainingen opleveren.
+      const grens = new Date(Date.now() - MAIL_VENSTER_DAGEN * 86400000)
+        .toISOString().slice(0, 10);
+      const verse = klaar.filter((r) => r.datum >= grens);
+      const teOud = klaar.length - verse.length;
+
+      let regels = verse.map((r) => ({ ...r, keer: telling[r.speler] || 1 }));
 
       let rest = 0;
       if (body.adressen) {
@@ -951,7 +964,7 @@ export default {
       }
 
       return json({ ok: true, bijgewerkt: opslag.bijgewerkt, wacht: opslag.wacht || 0,
-                    aantal: regels.length, rest, regels });
+                    aantal: regels.length, rest, teOud, regels });
     }
 
     // POST /admin/mail-aan — de automatische afwezigheidsmail aan of uit
