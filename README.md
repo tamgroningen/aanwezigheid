@@ -324,6 +324,11 @@ Functies in het script: `verstuurNietGekomen` (de dagelijkse run),
 niets), `testbericht` (stuurt één voorbeeld naar `TEST_MAIL`), `zetTrigger`
 (zet de dagelijkse trigger, eenmalig).
 
+Onder elk bericht staat de vaste handtekening van fiscus@tam.nl, met het
+TAM-logo als PNG in de mail zelf. Wisselt het bestuur, dan pas je bovenin
+`Code.gs` de drie regels `FISCUS_NAAM`, `FISCUS_BESTUUR` en `FISCUS_TELEFOON`
+aan.
+
 Mailadressen worden per run bij Genkgo opgehaald en nergens bewaard. Staat er
 geen adres bij Genkgo, dan wordt de regel niet afgevinkt en komt hij morgen
 terug.

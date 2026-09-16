@@ -18,6 +18,41 @@
 
 var BOETEBELEID = 'https://tam.nl/tennis/training/trainingsboetes';
 
+// De vaste handtekening van fiscus@tam.nl. Wisselt het bestuur, dan zijn dit
+// de drie regels die je aanpast.
+var FISCUS_NAAM = 'Victor Miedema';
+var FISCUS_BESTUUR = "Bestuur 'Approach'";
+var FISCUS_TELEFOON = '06 37433101';
+
+// Het TAM-logo, als PNG in de mail zelf. Een verwijzing naar een plaatje op
+// internet blokkeren veel mailprogramma's, dit niet.
+var LOGO_PNG = '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';
+
+function logo_() {
+  var blob = Utilities.newBlob(Utilities.base64Decode(LOGO_PNG), 'image/png', 'tam.png');
+  return blob.setName('tamlogo');
+}
+
+function handtekeningHtml_() {
+  return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#000">'
+    + '<p style="margin:0 0 12px">Met TAMsche groet,</p>'
+    + '<p style="margin:0 0 12px"><b>' + FISCUS_NAAM + '</b><br>'
+    + 'h.t. fiscus der Tennisclub Albertus Magnus<br>' + FISCUS_BESTUUR + '</p>'
+    + '<p style="margin:0 0 12px">Tennisclub Albertus Magnus<br>Postbus 1138<br>'
+    + '9701 BC Groningen<br>'
+    + '&#9993;: <a href="mailto:fiscus@tam.nl">fiscus@tam.nl</a><br>'
+    + '&#128222;: ' + FISCUS_TELEFOON + '</p>'
+    + '<p style="margin:0"><img src="cid:tamlogo" width="192" height="82" '
+    + 'alt="Tennisclub Albertus Magnus"></p></div>';
+}
+
+function handtekeningTekst_() {
+  return ['Met TAMsche groet,', '', FISCUS_NAAM,
+          'h.t. fiscus der Tennisclub Albertus Magnus', FISCUS_BESTUUR, '',
+          'Tennisclub Albertus Magnus', 'Postbus 1138', '9701 BC Groningen',
+          'fiscus@tam.nl', FISCUS_TELEFOON].join('\n');
+}
+
 function eigenschap_(naam, verplicht) {
   var v = PropertiesService.getScriptProperties().getProperty(naam);
   if (!v && verplicht) throw new Error('Scripteigenschap ' + naam + ' ontbreekt');
@@ -78,17 +113,18 @@ function bericht_(regel) {
        + 'trainingsmoment. Dat is 15 euro bij een training per week en 30 euro bij twee. Mis '
        + 'je deze trainingsronde niet meer dan drie trainingen van een trainingsmoment, dan '
        + 'worden de boetes kwijtgescholden. Het hele beleid lees je op ' + BOETEBELEID);
-  r.push('');
-  r.push('Met sportieve groet,');
-  r.push('Bestuur 63 der Tennisclub Albertus Magnus');
 
-  var tekst = r.join('\n');
-  var html = r.map(function (p) {
-    if (p === '') return '';
-    return '<p style="margin:0 0 12px">' + p
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-      .replace(BOETEBELEID, '<a href="' + BOETEBELEID + '">het boetebeleid</a>') + '</p>';
-  }).join('');
+  // Onder het bericht komt de vaste handtekening van fiscus@tam.nl.
+  var tekst = r.join('\n') + '\n\n' + handtekeningTekst_();
+  var html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
+    + 'line-height:1.5;color:#000">'
+    + r.map(function (p) {
+        if (p === '') return '';
+        return '<p style="margin:0 0 12px">' + p
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(BOETEBELEID, '<a href="' + BOETEBELEID + '">het boetebeleid</a>') + '</p>';
+      }).join('')
+    + handtekeningHtml_() + '</div>';
 
   return { onderwerp: onderwerp, tekst: tekst, html: html };
 }
@@ -97,6 +133,7 @@ function stuur_(adres, m) {
   GmailApp.sendEmail(adres, m.onderwerp, m.tekst, {
     htmlBody: m.html,
     name: 'Tennisclub Albertus Magnus',
+    inlineImages: { tamlogo: logo_() },
   });
 }
 
