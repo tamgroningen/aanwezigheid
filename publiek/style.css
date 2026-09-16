@@ -309,3 +309,4 @@ td.komt-nog { background: repeating-linear-gradient(
   135deg, transparent, transparent 4px,
   color-mix(in srgb, var(--border) 45%, transparent) 4px,
   color-mix(in srgb, var(--border) 45%, transparent) 5px); }
+.ng-details { font-size: .8rem; color: var(--muted); line-height: 1.5; }

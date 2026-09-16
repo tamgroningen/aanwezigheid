@@ -40,6 +40,38 @@ Die pagina is bedoeld voor Niels, Daphne en hun opvolgers, zodat de app niet
 afhangt van wie hem gebouwd heeft. Verandert er iets aan de werking, werk dan
 ook die tekst bij.
 
+### Niet gekomen zonder afmelding
+
+Op de instellingenpagina staat een lijst van spelers die er niet waren en zich
+ook niet hadden afgemeld. Bedoeld om ze een bericht te sturen vanaf
+fiscus@tam.nl, met de strekking: je was er niet en je had je niet afgemeld,
+was je er wel dan graag even contact met je trainer, en meld je voortaan af
+zodat iemand anders je plek kan overnemen.
+
+**De 24-uursregel.** Iemand komt pas op die lijst als hij 24 uur onveranderd
+op afwezig staat. Dat wordt niet met tijdstempels gemeten maar door de
+ochtendmeting te vergelijken met die van de dag ervoor: staat iemand in
+allebei, dan is het beeld een dag stabiel. Zo krijgt een trainer die nog
+midden in het invullen zit, of die zich vertikt heeft, de tijd om het te
+herstellen voordat er iets de deur uit gaat. Het werkt ook voor de trainer die
+pas een week later invult, want de 24 uur begint te lopen bij het invullen en
+niet op de dag van de training.
+
+Wie gemaild is wordt afgevinkt (`/admin/gemaild`), zodat niemand twee keer
+hetzelfde bericht krijgt.
+
+**Mailadressen staan niet in deze app.** Ze worden pas bij het versturen bij
+Genkgo opgehaald, via `/admin/niet-gekomen` met `"adressen": true`. Cloudflare
+staat 50 subverzoeken per aanroep toe, dus dat gaat in stukken: het antwoord
+bevat `rest`, en met `vanaf` haal je het volgende stuk op.
+
+**Versturen gebeurt nog met de hand.** Genkgo kan dit niet automatisch: de
+integratie-API heeft geen mail-endpoint en het token is alleen-lezen. De
+mailboxen van tam.nl draaien op Google Workspace en de SPF van tam.nl staat
+Google al toe, dus de logische volgende stap is een Google Apps Script onder
+het TAM-account dat dagelijks de lijst ophaalt, verstuurt als fiscus@tam.nl en
+terugmeldt wat er weg is. Dan komen antwoorden ook in die mailbox terecht.
+
 ### Eindoverzicht
 
 Aan het eind van een trainingsronde geeft **Eindoverzicht** een afdrukbaar

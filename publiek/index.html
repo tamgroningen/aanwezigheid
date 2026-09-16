@@ -532,6 +532,16 @@ function renderInstellingen() {
         <div id="sync-uitslag"></div>
     </div>`;
 
+    // --- niet komen opdagen ---
+    html += `<div class="card sync">
+        <h2>Niet gekomen zonder afmelding</h2>
+        <p>Wie er niet was en zich ook niet had afgemeld. Iemand komt pas op deze lijst als hij
+        24 uur onveranderd op afwezig staat, zodat een trainer die nog aan het invullen is of zich
+        vertikt heeft de tijd heeft om het te herstellen.</p>
+        <button class="btn-sm" id="nietgekomen-btn">Lijst ophalen</button>
+        <div id="nietgekomen-uitslag"></div>
+    </div>`;
+
     // --- uitleg ---
     const stuk = (titel, inhoud) => `<details class="inst"><summary>${titel}</summary>${inhoud}</details>`;
 
@@ -614,6 +624,59 @@ function renderInstellingen() {
 
 function bindInstellingen() {
     document.getElementById('sync-btn')?.addEventListener('click', () => syncDraaien(false));
+    document.getElementById('nietgekomen-btn')?.addEventListener('click', nietGekomenTonen);
+}
+
+/**
+ * De lijst van wie er niet kwam opdagen zonder afmelding.
+ *
+ * Wordt op verzoek opgehaald en niet bij het openen van de pagina: het is een
+ * zwaardere berekening en je hebt hem niet elke keer nodig.
+ */
+async function nietGekomenTonen() {
+    const knop = document.getElementById('nietgekomen-btn');
+    const uit = document.getElementById('nietgekomen-uitslag');
+    if (!uit) return;
+    if (knop) { knop.disabled = true; knop.textContent = 'Bezig...'; }
+    uit.innerHTML = '<p class="sync-bezig">Bezig met ophalen.</p>';
+
+    let r;
+    try { r = await apiPost('/admin/niet-gekomen', {}); }
+    catch (e) { r = { error: String(e && e.message || e) }; }
+    if (knop) { knop.disabled = false; knop.textContent = 'Lijst ophalen'; }
+
+    if (!r || r.error) { uit.innerHTML = `<p class="sync-fout">${esc(r?.error || 'Onbekende fout')}</p>`; return; }
+
+    let html = `<p class="sync-bron">Laatst berekend: ${esc(tijdstip(r.bijgewerkt))}.
+        ${r.wacht ? `${r.wacht} ${r.wacht === 1 ? 'geval wacht' : 'gevallen wachten'} nog een dag.` : ''}</p>`;
+
+    if (!r.aantal) {
+        html += '<p class="sync-gelijk">Niemand om te mailen.</p>';
+        uit.innerHTML = html;
+        return;
+    }
+
+    // Op speler groeperen: die krijgt één mail per gemiste training, maar je
+    // wilt in één oogopslag zien wie het vaker overkomt.
+    const perSpeler = {};
+    for (const x of r.regels) (perSpeler[x.speler] = perSpeler[x.speler] || []).push(x);
+    const namen = Object.keys(perSpeler).sort((a, b) =>
+        perSpeler[b].length - perSpeler[a].length || a.localeCompare(b, 'nl'));
+
+    html += `<p><strong>${r.aantal}</strong> ${r.aantal === 1 ? 'bericht' : 'berichten'} klaar,
+        voor ${namen.length} ${namen.length === 1 ? 'speler' : 'spelers'}.</p>
+        <div class="table-wrap"><table class="data">
+        <thead><tr><th>Speler</th><th class="num">Keer</th><th>Trainingen</th></tr></thead><tbody>`;
+    for (const naam of namen) {
+        const rijen = perSpeler[naam];
+        html += `<tr><td>${esc(naam)}</td><td class="num">${rijen[0].keer}</td>
+            <td class="ng-details">${rijen.map(x =>
+                `${esc(formatDate(x.datum))} &middot; ${esc(x.groep)}`).join('<br>')}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    html += `<p class="sync-let-op">Versturen gaat nog met de hand. De mailadressen staan niet in
+        deze app; die worden pas bij het versturen bij Genkgo opgehaald.</p>`;
+    uit.innerHTML = html;
 }
 
 /**

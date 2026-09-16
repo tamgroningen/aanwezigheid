@@ -133,6 +133,13 @@ async function draaiAfmeldingen(env, { schrijf, sporen: wilSporen }) {
   };
   if (schrijf) await env.AANWEZIGHEID.put('afmeldingen', JSON.stringify(nieuw));
 
+  // Meteen daarna bepalen wie er gemaild mag worden. Dit hoort bij dezelfde
+  // dagelijkse run: de vergelijking met gisteren is precies wat de 24 uur
+  // bewaakt, dus die moet één keer per dag gebeuren en niet vaker.
+  if (schrijf) {
+    try { await werkNietGekomenBij(env, data, opgehaald.perGroep); } catch (e) { /* niet fataal */ }
+  }
+
   const dagen = Object.values(opgehaald.perGroep).flatMap((d) => Object.values(d));
   return {
     ok: true,
@@ -144,6 +151,86 @@ async function draaiAfmeldingen(env, { schrijf, sporen: wilSporen }) {
     totaal_overnames: dagen.reduce((n, d) => n + d.overnames, 0),
     onbekend,
   };
+}
+
+/**
+ * Wie was er niet, zonder zich af te melden?
+ *
+ * Alleen trainingen die al zijn geweest, niet vervallen zijn en door de
+ * trainer zijn ingevuld. Een training die nog niet is ingevuld zegt niets:
+ * dan weten we alleen dat de trainer er nog niet aan toe is gekomen.
+ */
+function nietGekomen(data, perGroep) {
+  const vandaag = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Amsterdam', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+
+  const uit = [];
+  for (const trainer of data.trainers) {
+    for (const g of trainer.groups || []) {
+      const planning = perGroep[String(g.genkgoId)] || {};
+      const afgelast = new Set(g.cancelled || []);
+      for (const datum of Object.keys(planning)) {
+        if (datum > vandaag || afgelast.has(datum)) continue;
+        const ingevuld = (g.attendance && datum in g.attendance)
+          || (g.totalPresent && datum in g.totalPresent);
+        if (!ingevuld) continue;
+
+        const aanwezig = new Set((g.attendance || {})[datum] || []);
+        const afgemeld = new Set([
+          ...((planning[datum].gekoppeld || []).filter(Boolean)),
+          ...(((g.excused || {})[datum]) || []),
+        ]);
+        for (const speler of g.players || []) {
+          if (aanwezig.has(speler) || afgemeld.has(speler)) continue;
+          uit.push({
+            sleutel: `${g.id}|${datum}|${speler}`,
+            speler, datum, groep: g.name, trainer: trainer.name,
+            genkgoId: g.genkgoId,
+            persoonId: Object.entries(g.playerIds || {}).find(([, n]) => n === speler)?.[0] || null,
+          });
+        }
+      }
+    }
+  }
+  return uit;
+}
+
+/**
+ * Houdt bij wie er gemaild mag worden.
+ *
+ * De regel: pas mailen als iemand 24 uur onveranderd op afwezig staat. Dat
+ * meten we niet met tijdstempels maar door de meting van vandaag te
+ * vergelijken met die van gisteren. Staat iemand in allebei, dan is het beeld
+ * een dag stabiel en heeft de trainer de tijd gehad zich te herstellen.
+ *
+ * Dat vangt de trainer die midden in het invullen zit als de ochtendrun
+ * langskomt: die halve lijst ziet er morgen anders uit, en alleen wat er dan
+ * nog staat telt. En het vangt de trainer die pas een week later invult, want
+ * de 24 uur begint te lopen op het moment dat hij invult, niet op de dag van
+ * de training zelf.
+ *
+ * Wie gemaild is blijft in `gemaild` staan, zodat niemand twee keer hetzelfde
+ * bericht krijgt als de trainer er later nog eens in gaat.
+ */
+async function werkNietGekomenBij(env, data, perGroep) {
+  const opslag = JSON.parse(await env.AANWEZIGHEID.get('nietgekomen') || '{}');
+  const vorige = new Set(opslag.vorige || []);
+  const gemaild = opslag.gemaild || {};
+
+  const huidig = nietGekomen(data, perGroep);
+  const klaar = huidig.filter((r) => vorige.has(r.sleutel) && !gemaild[r.sleutel]);
+
+  const nieuw = {
+    bijgewerkt: new Date().toISOString(),
+    vorige: huidig.map((r) => r.sleutel),
+    gemaild,
+    klaar,
+    // Alleen ter informatie: hoeveel er nog een dag moeten rijpen.
+    wacht: huidig.filter((r) => !vorige.has(r.sleutel) && !gemaild[r.sleutel]).length,
+  };
+  await env.AANWEZIGHEID.put('nietgekomen', JSON.stringify(nieuw));
+  return nieuw;
 }
 
 export default {
@@ -795,6 +882,87 @@ export default {
         await saveData(data);
       }
       return json({ ok: true, toegepast: !!apply, aantal: weg.length, weg });
+    }
+
+    // POST /admin/niet-gekomen — wie er gemaild mag worden
+    //
+    // Alleen wie 24 uur onveranderd op afwezig staat. De mailadressen worden
+    // hier bij Genkgo opgehaald en nergens bewaard: de app slaat van spelers
+    // bewust alleen naam en persoonsnummer op.
+    if (request.method === 'POST' && path === '/admin/niet-gekomen') {
+      const body = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, body.code);
+      if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
+
+      const opslag = JSON.parse(await env.AANWEZIGHEID.get('nietgekomen') || '{}');
+      const klaar = opslag.klaar || [];
+
+      // Hoe vaak is iemand deze ronde al niet komen opdagen? Dat hoort in de
+      // mail, want er hangt een boete aan de derde keer.
+      const afm = JSON.parse(await env.AANWEZIGHEID.get('afmeldingen') || '{}');
+      const alles = nietGekomen(data, afm.perGroep || {});
+      const telling = {};
+      for (const r of alles) telling[r.speler] = (telling[r.speler] || 0) + 1;
+
+      let regels = klaar.map((r) => ({ ...r, keer: telling[r.speler] || 1 }));
+
+      let rest = 0;
+      if (body.adressen) {
+        // Eén verzoek per persoon, en Cloudflare staat er 50 toe per aanroep.
+        // Wie meer regels heeft haalt ze in stukken op met `vanaf`; `rest`
+        // zegt hoeveel er nog volgen.
+        const ruimte = 45;
+        const vanaf = Number(body.vanaf) || 0;
+        regels = regels.slice(vanaf);
+
+        // Knippen op de regel waar de 46e persoon zou beginnen. Simpelweg de
+        // eerste 45 personen pakken gaat mis: dan komen er regels mee van
+        // iemand die er niet bij zat, en die krijgen dan geen adres.
+        const uniek = [];
+        let tot = regels.length;
+        for (let i = 0; i < regels.length; i++) {
+          const id = regels[i].persoonId;
+          if (!id || uniek.includes(id)) continue;
+          if (uniek.length === ruimte) { tot = i; break; }
+          uniek.push(id);
+        }
+        rest = regels.length - tot;
+        regels = regels.slice(0, tot);
+        const mails = {};
+        for (const id of uniek) {
+          try {
+            const res = await fetch(
+              `https://tam.genkgo.app/_/integration/api/v1/organization/entry/${id}`,
+              { headers: { 'X-Api-Token': env.GENKGO_API_TOKEN, Accept: 'application/json' } });
+            if (!res.ok) continue;
+            const r = (await res.json()).resource;
+            mails[id] = ((Array.isArray(r) ? r[0] : r)?.profile || {}).mail || null;
+          } catch (e) { /* zonder adres kan deze regel niet verstuurd worden */ }
+        }
+        regels = regels.map((r) => ({ ...r, mail: mails[r.persoonId] || null }));
+      }
+
+      return json({ ok: true, bijgewerkt: opslag.bijgewerkt, wacht: opslag.wacht || 0,
+                    aantal: regels.length, rest, regels });
+    }
+
+    // POST /admin/gemaild — afvinken wat verstuurd is
+    if (request.method === 'POST' && path === '/admin/gemaild') {
+      const body = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, body.code);
+      if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
+      if (!Array.isArray(body.sleutels)) return json({ error: 'Geef `sleutels` mee' }, 400);
+
+      const opslag = JSON.parse(await env.AANWEZIGHEID.get('nietgekomen') || '{}');
+      const gemaild = opslag.gemaild || {};
+      const nu = new Date().toISOString();
+      for (const sleutel of body.sleutels) gemaild[sleutel] = nu;
+      const klaar = (opslag.klaar || []).filter((r) => !gemaild[r.sleutel]);
+      await env.AANWEZIGHEID.put('nietgekomen',
+        JSON.stringify({ ...opslag, gemaild, klaar }));
+      return json({ ok: true, afgevinkt: body.sleutels.length, resterend: klaar.length });
     }
 
     return json({ error: 'Not found' }, 404);
