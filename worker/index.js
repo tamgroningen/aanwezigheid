@@ -967,6 +967,26 @@ export default {
                     aantal: regels.length, rest, teOud, regels });
     }
 
+    // POST /admin/export — alles in één keer, voor de back-ups
+    //
+    // De wekelijkse kopie in KV staat in dezelfde namespace als de live
+    // gegevens, dus die helpt niet als de namespace zelf iets overkomt. Hier
+    // haalt zowel de back-up op Drive als die op de laptop zijn kopie op.
+    if (request.method === 'POST' && path === '/admin/export') {
+      const body = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, body.code);
+      if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
+
+      return json({
+        ok: true,
+        gemaakt: new Date().toISOString(),
+        data,
+        afmeldingen: JSON.parse(await env.AANWEZIGHEID.get('afmeldingen') || '{}'),
+        nietgekomen: JSON.parse(await env.AANWEZIGHEID.get('nietgekomen') || '{}'),
+      });
+    }
+
     // POST /admin/mail-aan — de automatische afwezigheidsmail aan of uit
     //
     // Staat niets vast, dan staat hij aan. Zo werkt hij vanzelf zodra het

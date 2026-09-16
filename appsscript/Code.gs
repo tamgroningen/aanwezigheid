@@ -232,12 +232,46 @@ function testbericht() {
   Logger.log('testbericht verstuurd naar ' + adres);
 }
 
+/**
+ * Wekelijkse back-up van de presentie naar Drive.
+ *
+ * De Worker zet zelf elke zondag een kopie in KV, maar die staat in dezelfde
+ * namespace als de live gegevens. Deze staat bij een andere leverancier, dus
+ * hij overleeft het als er met het Cloudflare-account iets misgaat.
+ * Trainingsboetes zijn een grote post, dus dit mag niet aan een draadje hangen.
+ */
+function backupNaarDrive() {
+  var uitvoer = worker_('/admin/export', {});
+  var datum = Utilities.formatDate(new Date(), 'Europe/Amsterdam', 'yyyy-MM-dd');
+  var naam = 'aanwezigheid-' + datum + '.json';
+
+  var map = backupMap_();
+  // Twee keer op een dag draaien mag geen twee bestanden opleveren.
+  var bestaand = map.getFilesByName(naam);
+  while (bestaand.hasNext()) bestaand.next().setTrashed(true);
+
+  var blob = Utilities.newBlob(JSON.stringify(uitvoer), 'application/json', naam);
+  var bestand = map.createFile(blob);
+  Logger.log('back-up op Drive: ' + naam + ' (' + bestand.getSize() + ' bytes)');
+  return naam;
+}
+
+/** De map waar de back-ups in komen; maakt hem aan als hij er nog niet is. */
+function backupMap_() {
+  var naam = 'TAM aanwezigheid back-ups';
+  var mappen = DriveApp.getFoldersByName(naam);
+  return mappen.hasNext() ? mappen.next() : DriveApp.createFolder(naam);
+}
+
 /** Zet de dagelijkse trigger. Eén keer draaien, daarna niet meer nodig. */
 function zetTrigger() {
   var bestaand = ScriptApp.getProjectTriggers();
   for (var i = 0; i < bestaand.length; i++) {
-    if (bestaand[i].getHandlerFunction() === 'verstuurNietGekomen') ScriptApp.deleteTrigger(bestaand[i]);
+    var f = bestaand[i].getHandlerFunction();
+    if (f === 'verstuurNietGekomen' || f === 'backupNaarDrive') ScriptApp.deleteTrigger(bestaand[i]);
   }
   ScriptApp.newTrigger('verstuurNietGekomen').timeBased().atHour(11).everyDays(1).create();
-  Logger.log('trigger gezet op 11 uur');
+  ScriptApp.newTrigger('backupNaarDrive').timeBased()
+    .onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(4).create();
+  Logger.log('triggers gezet: mailen dagelijks om 11 uur, back-up zondag om 4 uur');
 }

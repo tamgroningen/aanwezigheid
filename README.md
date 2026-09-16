@@ -337,3 +337,35 @@ zodra hij weer aan staat.
 Mailadressen worden per run bij Genkgo opgehaald en nergens bewaard. Staat er
 geen adres bij Genkgo, dan wordt de regel niet afgevinkt en komt hij morgen
 terug.
+
+## Back-ups
+
+De presentie bepaalt de trainingsboetes, een post van rond de 8.000 euro per
+jaar. Daarom liggen er drie kopieën, bij drie verschillende partijen.
+
+| Waar | Wanneer | Door |
+| --- | --- | --- |
+| Cloudflare KV, sleutel `backup:<datum>` | zondag 03:00 | de Worker zelf |
+| Google Drive, map *TAM aanwezigheid back-ups* onder fiscus@tam.nl | zondag 04:00 | `backupNaarDrive` in het Apps Script |
+| Deze laptop, `backups/aanwezigheid-<datum>.json` | zondag 04:00 | `scripts/backup-lokaal.sh` via launchd |
+
+De kopie in KV staat in dezelfde namespace als de live gegevens. Die helpt tegen
+een verkeerde bewerking, niet tegen het kwijtraken van de namespace zelf.
+Daarom staan de andere twee ergens anders.
+
+De lokale back-up activeren:
+
+```
+launchctl load -w ~/Library/LaunchAgents/nl.tam.aanwezigheid.backup.plist
+```
+
+Kopieer daarvoor `scripts/nl.tam.aanwezigheid.backup.plist` naar
+`~/Library/LaunchAgents/`. Handmatig draaien kan altijd met
+`scripts/backup-lokaal.sh`. Het script gebruikt je eigen wrangler-aanmelding,
+er staat dus geen wachtwoord in.
+
+`backups/` staat bewust in `.gitignore`: er staan ledennamen en trainerscodes
+in, en die horen niet in een repo.
+
+Terugzetten gaat met `wrangler kv key put --remote --namespace-id <ns> data
+--path <bestand>`, waarbij je het `data`-deel uit de json haalt.
