@@ -102,9 +102,6 @@ function bericht_(regel) {
   r.push('Je stond ' + wanneer + ' ingedeeld voor ' + regel.groep + '. Je trainer heeft '
        + 'genoteerd dat je er niet was. Een afmelding hebben we niet teruggezien.');
   r.push('');
-  r.push('Was je er wel? Dan is er iets misgegaan bij de presentie. Neem even contact op met '
-       + regel.trainer + ', want je trainer vult de presentielijst in.');
-  r.push('');
   r.push('Was je er niet? Meld je dan de volgende keer op tijd af. Dat kan tot 9 uur '
        + "'s ochtends op de dag van de training, via de site of de app. Je training komt dan "
        + 'vrij en een ander lid kan hem overnemen. Daar help je iemand mee.');
@@ -113,6 +110,9 @@ function bericht_(regel) {
        + 'trainingsmoment. Dat is 15 euro bij een training per week en 30 euro bij twee. Mis '
        + 'je deze trainingsronde niet meer dan drie trainingen van een trainingsmoment, dan '
        + 'worden de boetes kwijtgescholden. Het hele beleid lees je op ' + BOETEBELEID);
+  r.push('');
+  r.push('Was je er wel? Dan is er iets misgegaan bij de presentie. Neem even contact op met '
+       + regel.trainer + ', want je trainer vult de presentielijst in.');
 
   // Onder het bericht komt de vaste handtekening van fiscus@tam.nl.
   var tekst = r.join('\n') + '\n\n' + handtekeningTekst_();
