@@ -924,7 +924,7 @@ const SYNC_LABELS = {
  * trainingsleider dit zelf doen, zonder terminal en zonder dat er per ongeluk
  * iets sneuvelt.
  */
-async function syncDraaien(toepassen) {
+async function syncDraaien(toepassen, metTrainers) {
     const knop = document.getElementById('sync-btn');
     const uit = document.getElementById('sync-uitslag');
     if (!uit) return;
@@ -933,7 +933,10 @@ async function syncDraaien(toepassen) {
 
     let r;
     try {
-        r = await apiPost('/admin/sync', toepassen ? { apply: true } : {});
+        r = await apiPost('/admin/sync', {
+            ...(toepassen ? { apply: true } : {}),
+            ...(metTrainers ? { trainers: true } : {}),
+        });
     } catch (e) {
         r = { error: 'Genkgo niet bereikbaar: ' + e.message };
     }
@@ -979,9 +982,22 @@ async function syncDraaien(toepassen) {
         html += '</ul>';
     }
 
-    if ((r.overgeslagen || []).length) {
-        html += `<p class="sync-let-op">Overgeslagen, omdat de trainer nog niet in de app staat:
-            ${esc((r.overgeslagen || []).map(o => o.trainer || o).join(', '))}</p>`;
+    // Groepen van een trainer die de app nog niet kent. Die maakt de sync
+    // bewust niet vanzelf aan: een tikfout in Genkgo ("Philipa" tegen
+    // "Philippa") zou anders stil een tweede trainer met een eigen inlogcode
+    // opleveren, terwijl de oude code naar een lege lijst wijst. Daarom wordt
+    // de naam hier getoond en beslist er iemand die hem kan herkennen.
+    const nieuweTrainers = {};
+    for (const o of r.overgeslagen || []) {
+        if (o.trainer) nieuweTrainers[o.trainer] = (nieuweTrainers[o.trainer] || 0) + 1;
+    }
+    const namen = Object.keys(nieuweTrainers);
+    if (namen.length) {
+        html += `<p class="sync-let-op"><strong>${namen.length === 1 ? 'Nieuwe trainer' : 'Nieuwe trainers'}
+            in Genkgo:</strong> ${namen.map(n =>
+                `${esc(n)} (${nieuweTrainers[n]} groep${nieuweTrainers[n] === 1 ? '' : 'en'})`).join(', ')}.<br>
+            Klopt de schrijfwijze? Dan kun je ze toevoegen; ze krijgen een eigen inlogcode die daarna in
+            dit overzicht staat. Staat er een tikfout in, verbeter die dan eerst in Genkgo.</p>`;
     }
 
     if (r.toegepast) {
@@ -994,8 +1010,13 @@ async function syncDraaien(toepassen) {
     if (plan.length) {
         html += '<button class="btn-sm" id="sync-apply-btn">Toepassen</button>';
     }
+    if (namen.length) {
+        html += `<button class="btn-sm" id="sync-trainers-btn">Toepassen en
+            ${namen.length === 1 ? 'deze trainer' : 'deze trainers'} toevoegen</button>`;
+    }
     uit.innerHTML = html;
-    document.getElementById('sync-apply-btn')?.addEventListener('click', () => syncDraaien(true));
+    document.getElementById('sync-apply-btn')?.addEventListener('click', () => syncDraaien(true, false));
+    document.getElementById('sync-trainers-btn')?.addEventListener('click', () => syncDraaien(true, true));
 }
 
 function bindAdmin() {

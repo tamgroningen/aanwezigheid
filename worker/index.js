@@ -128,7 +128,7 @@ async function draaiAfmeldingen(env, { schrijf, sporen: wilSporen }) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -583,6 +583,11 @@ export default {
       // vanzelf naar een half ingedeelde volgende ronde springt.
       data.genkgo = { seizoen: genkgo.seizoen, ronde: genkgo.ronde };
       await saveData(data);
+
+      // Meteen de planning ophalen. Een zojuist toegevoegde groep heeft nog
+      // geen lesdagen, en die komen uit de planning; zonder dit zou hij tot
+      // de volgende ochtend op nul lessen staan.
+      ctx.waitUntil(draaiAfmeldingen(env, { schrijf: true }).catch(() => {}));
 
       return json({ ok: true, toegepast: true, genkgo, groepen_in_genkgo: indeling.length,
                     plan, overgeslagen, data });
