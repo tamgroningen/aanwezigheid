@@ -538,6 +538,16 @@ function renderInstellingen() {
         <p>Wie er niet was en zich ook niet had afgemeld. Iemand komt pas op deze lijst als hij
         24 uur onveranderd op afwezig staat, zodat een trainer die nog aan het invullen is of zich
         vertikt heeft de tijd heeft om het te herstellen.</p>
+        <label class="inst-schakelaar">
+            <input type="checkbox" id="mail-aan"${src.mailAan === false ? '' : ' checked'}>
+            <span>Automatische afwezigheidsmail aan</span>
+        </label>
+        <p class="inst-bijschrift">Staat dit aan, dan krijgt iedereen op de lijst elke ochtend om
+        11:00 een bericht vanaf fiscus@tam.nl, met uitleg over afmelden en het boetebeleid.
+        Zet je het uit, dan blijft de lijst gewoon bijgehouden maar gaat er niets de deur uit.
+        Wat er tijdens het uitzetten binnenkomt, wordt later alsnog verstuurd zodra je het weer
+        aanzet.</p>
+        <p id="mail-aan-melding" class="sync-gelijk" hidden></p>
         <button class="btn-sm" id="nietgekomen-btn">Lijst ophalen</button>
         <div id="nietgekomen-uitslag"></div>
     </div>`;
@@ -625,6 +635,37 @@ function renderInstellingen() {
 function bindInstellingen() {
     document.getElementById('sync-btn')?.addEventListener('click', () => syncDraaien(false));
     document.getElementById('nietgekomen-btn')?.addEventListener('click', nietGekomenTonen);
+    document.getElementById('mail-aan')?.addEventListener('change', mailAanZetten);
+}
+
+/** De automatische afwezigheidsmail aan of uit. */
+async function mailAanZetten(e) {
+    const vink = e.target;
+    const melding = document.getElementById('mail-aan-melding');
+    const aan = vink.checked;
+    vink.disabled = true;
+    try {
+        const r = await apiPost('/admin/mail-aan', { aan });
+        if (r.error) throw new Error(r.error);
+        if (ADMIN_DATA) ADMIN_DATA.mailAan = r.mailAan;
+        if (DATA) DATA.mailAan = r.mailAan;
+        if (melding) {
+            melding.hidden = false;
+            melding.className = 'sync-gelijk';
+            melding.textContent = aan
+                ? 'Aan. De eerstvolgende run om 11:00 verstuurt de berichten.'
+                : 'Uit. Er gaat niets meer de deur uit tot je dit weer aanzet.';
+        }
+    } catch (err) {
+        vink.checked = !aan;
+        if (melding) {
+            melding.hidden = false;
+            melding.className = 'sync-let-op';
+            melding.textContent = 'Niet gelukt: ' + err.message;
+        }
+    } finally {
+        vink.disabled = false;
+    }
 }
 
 /**

@@ -895,6 +895,13 @@ export default {
       const auth = validateCode(data, body.code);
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
 
+      // De trainingsleider kan de mails uitzetten vanuit de app. Dan geven we
+      // een lege lijst terug en vinkt het verzendscript dus niets af: alles
+      // blijft staan tot de schakelaar weer aan gaat.
+      if (data.mailAan === false) {
+        return json({ ok: true, uit: true, aantal: 0, rest: 0, regels: [] });
+      }
+
       const opslag = JSON.parse(await env.AANWEZIGHEID.get('nietgekomen') || '{}');
       const klaar = opslag.klaar || [];
 
@@ -945,6 +952,22 @@ export default {
 
       return json({ ok: true, bijgewerkt: opslag.bijgewerkt, wacht: opslag.wacht || 0,
                     aantal: regels.length, rest, regels });
+    }
+
+    // POST /admin/mail-aan — de automatische afwezigheidsmail aan of uit
+    //
+    // Staat niets vast, dan staat hij aan. Zo werkt hij vanzelf zodra het
+    // verzendscript draait, en is uitzetten een bewuste handeling.
+    if (request.method === 'POST' && path === '/admin/mail-aan') {
+      const body = await request.json();
+      const data = await getData();
+      const auth = validateCode(data, body.code);
+      if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
+      if (typeof body.aan !== 'boolean') return json({ error: 'Geef `aan` mee' }, 400);
+
+      data.mailAan = body.aan;
+      await saveData(data);
+      return json({ ok: true, mailAan: data.mailAan });
     }
 
     // POST /admin/gemaild — afvinken wat verstuurd is

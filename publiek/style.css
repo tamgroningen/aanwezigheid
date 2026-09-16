@@ -272,6 +272,14 @@ th.nog-open { background: color-mix(in srgb, var(--yellow) 18%, transparent); }
 .inst-dl dt { color: var(--muted); }
 .inst-dl dd { margin: 0; font-weight: 600; }
 .inst-kop { font-size: 1.05rem; margin: 22px 0 8px; }
+
+/* De schakelaar voor de automatische afwezigheidsmail. */
+.inst-schakelaar {
+  display: flex; align-items: center; gap: 8px;
+  margin: 12px 0 4px; font-weight: 600; font-size: .92rem; cursor: pointer;
+}
+.inst-schakelaar input { width: 16px; height: 16px; cursor: pointer; }
+.inst-bijschrift { color: var(--muted); font-size: .85rem; margin: 0 0 10px; max-width: 62ch; }
 details.inst {
   border: 1px solid var(--border); border-radius: var(--radius);
   padding: 10px 14px; margin-bottom: 8px; background: #fff;
