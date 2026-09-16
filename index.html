@@ -31,6 +31,39 @@ function getTrainerId() { return getAuth()?.role === 'trainer' ? getAuth().train
 // Ze staan bewust niet in `/data`: dat is een openbaar adres.
 let AFMELDINGEN = {};
 
+/**
+ * De lesdagen van een groep.
+ *
+ * Leidend is de planning in Genkgo. Die haalt de app elke ochtend om 10:00 al
+ * op voor de afmeldingen, en het is de plek waar de trainingsleider de
+ * trainingen neerzet. Door hem hier te gebruiken hoeft niemand de datums nog
+ * apart in deze app bij te houden: verzet Niels een training, dan volgt de
+ * presentielijst de volgende ochtend vanzelf.
+ *
+ * Staat er voor een groep geen planning -- Genkgo onbereikbaar, of de ronde is
+ * nog niet ingericht -- dan vallen we terug op wat er in de app staat. Anders
+ * zou een storing bij Genkgo de presentielijsten leegmaken, en dat is een veel
+ * groter probleem dan een datum die een dag te laat verschijnt.
+ */
+function lesdagen(group) {
+    const planning = Object.keys(AFMELDINGEN[String(group.genkgoId)] || {});
+    return (planning.length ? planning : (group.dates || [])).slice().sort();
+}
+
+/**
+ * Datums waarop al aanwezigheid is ingevuld maar die niet (meer) in de
+ * planning staan. Zulke lessen vallen uit de telling zodra de planning
+ * verandert, en dat mag niet stilletjes gebeuren.
+ */
+function buitenPlanning(group) {
+    const dagen = new Set(lesdagen(group));
+    const ingevuld = new Set([
+        ...Object.keys(group.attendance || {}),
+        ...Object.keys(group.totalPresent || {}),
+    ]);
+    return [...ingevuld].filter(d => !dagen.has(d)).sort();
+}
+
 /** De namen die zich hebben afgemeld voor deze groep op deze datum. */
 function afgemeldOp(group, date) {
     const dag = AFMELDINGEN[String(group.genkgoId)]?.[date];
@@ -63,7 +96,7 @@ function isIngevuld(group, date) {
  */
 function openTrainingen(group) {
     const vandaag = new Date().toISOString().slice(0, 10);
-    return group.dates
+    return lesdagen(group)
         .filter(d => d <= vandaag && !(group.cancelled || []).includes(d) && !isIngevuld(group, d))
         .sort().reverse();
 }
@@ -164,7 +197,7 @@ function generateWeeklyDates(dayOfWeek, startDate, endDate) {
 
 function calcGroupStats(group) {
     const today = new Date().toISOString().slice(0, 10);
-    const activeDates = group.dates.filter(d => !(group.cancelled || []).includes(d) && d <= today && isIngevuld(group, d));
+    const activeDates = lesdagen(group).filter(d => !(group.cancelled || []).includes(d) && d <= today && isIngevuld(group, d));
     const totalSessions = activeDates.length;
     const playerStats = group.players.map(player => {
         let count = 0;
@@ -286,6 +319,22 @@ function renderHome() {
         <input type="text" id="search-field" placeholder="Zoek trainer, dag, groep..." style="flex:1;padding:8px 12px;border:2px solid var(--border);border-radius:var(--radius);font-size:0.9rem">
         ${isAdmin() ? '<button class="btn-sm btn-muted" id="toggle-delete-btn">Verwijdermodus</button>' : ''}
     </div>`;
+
+    // De indeling uit Genkgo halen, zonder terminal en zonder Floris. Eerst
+    // een proefdraai die alleen laat zien wat er zou veranderen; pas als dat
+    // klopt kan het worden toegepast.
+    if (isAdmin()) {
+        html += `<div class="sync card" style="margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+                <div>
+                    <strong>Indeling uit Genkgo</strong>
+                    <span class="sync-uitleg">Haalt groepen, spelers en trainers op zoals ze in Genkgo staan.</span>
+                </div>
+                <button class="btn-sm" id="sync-btn">Controleren</button>
+            </div>
+            <div id="sync-uitslag"></div>
+        </div>`;
+    }
 
     if (isAdmin()) {
         html += `<details style="margin-bottom:16px">
@@ -423,7 +472,7 @@ function renderGroup(trainerId, groupId) {
     let html = `<a href="${backHash}" class="back-link">&larr; Terug</a>
         <h1>${esc(group.name)}<span class="save-status" id="save-status"></span></h1>`;
 
-    if (group.dates.length === 0) {
+    if (lesdagen(group).length === 0) {
         html += '<p class="empty">Nog geen lesdagen ingesteld.</p>';
         return html;
     }
@@ -449,8 +498,22 @@ function renderGroup(trainerId, groupId) {
         </div>`;
     }
 
+    // De lesdagen komen uit de planning in Genkgo. Verdwijnt daar een datum
+    // waar al aanwezigheid voor is ingevuld, dan valt die les stil uit de
+    // telling. Dat mag gebeuren -- Genkgo is leidend -- maar niet ongemerkt.
+    const zwevend = buitenPlanning(group);
+    if (zwevend.length && canEdit) {
+        html += `<div class="todo">
+            <strong>${zwevend.length === 1 ? 'Eén ingevulde training staat niet in de planning'
+                : `${zwevend.length} ingevulde trainingen staan niet in de planning`}:
+                ${zwevend.map(formatDate).join(', ')}</strong>
+            <span>De lesdagen komen uit Genkgo. Deze datums staan daar niet (meer) bij, dus tellen ze
+            nergens in mee. Klopt de planning in Genkgo niet, laat de trainingsleider hem dan aanvullen.</span>
+        </div>`;
+    }
+
     html += '<div class="att-grid"><table><thead><tr><th class="player-name">Speler</th>';
-    for (const d of group.dates) {
+    for (const d of lesdagen(group)) {
         const isCancelled = cancelled.includes(d);
         // Een voorbije training die nog niet is ingevuld telt niet mee in de
         // percentages, maar de trainer moet wel zien dat hij openstaat.
@@ -464,7 +527,7 @@ function renderGroup(trainerId, groupId) {
     // Cancel row (trainer + admin)
     if (canEdit) {
         html += '<tr class="cancel-row"><td class="player-name" style="font-size:0.75rem;color:var(--muted)">Vervallen?</td>';
-        for (const d of group.dates) {
+        for (const d of lesdagen(group)) {
             const isCancelled = cancelled.includes(d);
             html += `<td class="${isCancelled ? 'cancelled' : ''}"><input type="checkbox" class="cancel-cb" data-date="${d}" ${isCancelled ? 'checked' : ''}></td>`;
         }
@@ -473,7 +536,7 @@ function renderGroup(trainerId, groupId) {
 
     for (const ps of stats.playerStats) {
         html += `<tr><td class="player-name">${esc(ps.player)}</td>`;
-        for (const d of group.dates) {
+        for (const d of lesdagen(group)) {
             const isCancelled = cancelled.includes(d);
             const present = (group.attendance?.[d] || []).includes(ps.player);
             const afgemeld = isAfgemeld(group, d, ps.player);
@@ -514,7 +577,7 @@ function renderGroup(trainerId, groupId) {
 
     // Totals row
     html += '<tr style="font-weight:700"><td>Totaal</td>';
-    for (const d of group.dates) {
+    for (const d of lesdagen(group)) {
         const isCancelled = cancelled.includes(d);
         if (isCancelled) {
             html += '<td class="cancelled"></td>';
@@ -527,7 +590,7 @@ function renderGroup(trainerId, groupId) {
 
     // Total present incl. subs row
     html += '<tr style="font-weight:700"><td style="font-size:0.75rem">Totaal (incl. invallers)</td>';
-    for (const d of group.dates) {
+    for (const d of lesdagen(group)) {
         const isCancelled = cancelled.includes(d);
         if (isCancelled) {
             html += '<td class="cancelled"></td>';
@@ -543,10 +606,10 @@ function renderGroup(trainerId, groupId) {
     html += '<td></td><td></td></tr>';
 
     // Afmeldingen en overnames uit Genkgo, per datum.
-    const heeftAfmeldingen = group.dates.some(d => AFMELDINGEN[String(group.genkgoId)]?.[d]);
+    const heeftAfmeldingen = lesdagen(group).some(d => AFMELDINGEN[String(group.genkgoId)]?.[d]);
     if (heeftAfmeldingen) {
         html += '<tr><td style="font-size:0.75rem;color:var(--muted)">Afgemeld / overnames</td>';
-        for (const d of group.dates) {
+        for (const d of lesdagen(group)) {
             if (cancelled.includes(d)) { html += '<td class="cancelled"></td>'; continue; }
             const dag = AFMELDINGEN[String(group.genkgoId)]?.[d];
             const af = dag ? dag.afzeggers.length : 0;
@@ -759,11 +822,11 @@ function exportToCSV() {
         for (const group of trainer.groups) {
             const cancelled = group.cancelled || [];
             const today = new Date().toISOString().slice(0, 10);
-            const activeDates = group.dates.filter(d => !cancelled.includes(d) && d <= today && isIngevuld(group, d));
+            const activeDates = lesdagen(group).filter(d => !cancelled.includes(d) && d <= today && isIngevuld(group, d));
 
             // Header
             csv += `\n${trainer.name} - ${group.name}\n`;
-            csv += `Speler;${group.dates.map(d => {
+            csv += `Speler;${lesdagen(group).map(d => {
                 const label = formatDate(d);
                 return cancelled.includes(d) ? label + ' (vervallen)' : label;
             }).join(';')};Aanwezig;Totaal;Percentage\n`;
@@ -772,7 +835,7 @@ function exportToCSV() {
             for (const player of group.players) {
                 let count = 0;
                 let excusedCount = 0;
-                const cells = group.dates.map(d => {
+                const cells = lesdagen(group).map(d => {
                     if (cancelled.includes(d)) return '';
                     const present = (group.attendance?.[d] || []).includes(player);
                     const excused = (group.excused?.[d] || []).includes(player)
@@ -788,14 +851,14 @@ function exportToCSV() {
             }
 
             // Totals row
-            const totals = group.dates.map(d => {
+            const totals = lesdagen(group).map(d => {
                 if (cancelled.includes(d)) return '';
                 return (group.attendance?.[d] || []).length;
             });
             csv += `Totaal;${totals.join(';')};;;\n`;
 
             // Totals incl. subs row
-            const totalsInclSubs = group.dates.map(d => {
+            const totalsInclSubs = lesdagen(group).map(d => {
                 if (cancelled.includes(d)) return '';
                 const val = group.totalPresent?.[d];
                 return val != null ? val : '';
@@ -812,7 +875,7 @@ function exportToCSV() {
                 }
                 groupAvg = Math.round((presentSum / (activeDates.length * group.players.length)) * 100);
             }
-            csv += `Groepsgemiddelde;${group.dates.map(() => '').join(';')};;;${groupAvg}%\n`;
+            csv += `Groepsgemiddelde;${lesdagen(group).map(() => '').join(';')};;;${groupAvg}%\n`;
             if (activeDates.length > 0) { trainerPctSum += groupAvg; trainerPctCount++; }
         }
 
@@ -846,9 +909,99 @@ function bindSearch() {
     });
 }
 
+const SYNC_LABELS = {
+    'nieuwe-groep': 'Nieuwe groep',
+    'wijziging': 'Gewijzigd',
+    'koppeling': 'Gekoppeld aan Genkgo',
+    'niet-in-genkgo': 'Staat niet meer in Genkgo',
+};
+
+/**
+ * Haalt de indeling uit Genkgo.
+ *
+ * Eerst een proefdraai: die verandert niets en laat alleen zien wat er zou
+ * gebeuren. Pas na "Toepassen" wordt er weggeschreven. Zo kan de
+ * trainingsleider dit zelf doen, zonder terminal en zonder dat er per ongeluk
+ * iets sneuvelt.
+ */
+async function syncDraaien(toepassen) {
+    const knop = document.getElementById('sync-btn');
+    const uit = document.getElementById('sync-uitslag');
+    if (!uit) return;
+    if (knop) { knop.disabled = true; knop.textContent = 'Bezig...'; }
+    uit.innerHTML = '<p class="sync-bezig">Bezig met ophalen uit Genkgo, dit duurt een paar seconden.</p>';
+
+    let r;
+    try {
+        r = await apiPost('/admin/sync', toepassen ? { apply: true } : {});
+    } catch (e) {
+        r = { error: 'Genkgo niet bereikbaar: ' + e.message };
+    }
+    if (knop) { knop.disabled = false; knop.textContent = 'Controleren'; }
+
+    if (!r || r.error) {
+        uit.innerHTML = `<p class="sync-fout">${esc(r?.error || 'Onbekende fout')}</p>`;
+        return;
+    }
+
+    const g = r.genkgo || {};
+    let html = '';
+    if (g.seizoen || g.ronde) {
+        html += `<p class="sync-bron">Gelezen uit <strong>${esc(g.seizoen?.naam || '?')}
+            &rsaquo; ${esc(g.ronde?.naam || '?')}</strong>, ${r.groepen_in_genkgo} groepen.</p>`;
+    }
+
+    // Staat er een volgende ronde klaar? Dan melden, maar niet overstappen:
+    // een ronde wordt vaak over meerdere dagen ingedeeld.
+    const anders = (g.rondes || []).filter(x => x.id !== g.ronde?.id && x.groepen > 0);
+    if (anders.length) {
+        html += `<p class="sync-let-op">Let op: ${anders.map(x =>
+            `${esc(x.naam)} bevat inmiddels ${x.groepen} groep${x.groepen === 1 ? '' : 'en'}`).join(', ')}.
+            De app blijft op ${esc(g.ronde?.naam || 'de huidige ronde')} staan tot iemand overstapt.</p>`;
+    }
+
+    const plan = r.plan || [];
+    if (!plan.length) {
+        html += '<p class="sync-gelijk">De app loopt gelijk met Genkgo, er is niets te doen.</p>';
+    } else {
+        const perSoort = {};
+        for (const p of plan) (perSoort[p.soort] = perSoort[p.soort] || []).push(p);
+        html += '<ul class="sync-plan">';
+        for (const [soort, items] of Object.entries(perSoort)) {
+            html += `<li><strong>${esc(SYNC_LABELS[soort] || soort)}</strong> (${items.length})<ul>`;
+            for (const p of items.slice(0, 12)) {
+                const extra = p.trainer ? ` &mdash; ${esc(p.trainer)}` : '';
+                html += `<li>${esc(p.groep || '?')}${extra}</li>`;
+            }
+            if (items.length > 12) html += `<li>en nog ${items.length - 12}...</li>`;
+            html += '</ul></li>';
+        }
+        html += '</ul>';
+    }
+
+    if ((r.overgeslagen || []).length) {
+        html += `<p class="sync-let-op">Overgeslagen, omdat de trainer nog niet in de app staat:
+            ${esc((r.overgeslagen || []).map(o => o.trainer || o).join(', '))}</p>`;
+    }
+
+    if (r.toegepast) {
+        html += '<p class="sync-klaar">Toegepast. De pagina wordt ververst.</p>';
+        uit.innerHTML = html;
+        setTimeout(() => location.reload(), 1200);
+        return;
+    }
+
+    if (plan.length) {
+        html += '<button class="btn-sm" id="sync-apply-btn">Toepassen</button>';
+    }
+    uit.innerHTML = html;
+    document.getElementById('sync-apply-btn')?.addEventListener('click', () => syncDraaien(true));
+}
+
 function bindAdmin() {
     // Export button
     document.getElementById('export-btn')?.addEventListener('click', exportToCSV);
+    document.getElementById('sync-btn')?.addEventListener('click', () => syncDraaien(false));
 
     // Toggle delete mode
     document.getElementById('toggle-delete-btn')?.addEventListener('click', () => {

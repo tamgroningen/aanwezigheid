@@ -1,11 +1,16 @@
-import { haalIndeling, slug as slugify } from './genkgo.js';
+import { haalIndeling, vindTrainingsronde, slug as slugify } from './genkgo.js';
 import { haalAlles, isTienUurInAmsterdam } from './afmeldingen.js';
 
 const ADMIN_PASSWORD = 'training2026';
 
-// Trainingsronde in de Genkgo-organisatieboom. TR1 2026-2027 = 18095.
-// Bij een nieuwe ronde alleen dit getal (of de env-variabele) verzetten.
-const TRAININGSRONDE = 18095;
+// De map Planning in de Genkgo-organisatieboom. Daaronder staat per seizoen
+// een map "2026-2027", daarin "Training", en daarin de trainingsrondes. De app
+// zoekt zelf het seizoen en de ronde die tellen (zie vindTrainingsronde), dus
+// bij een nieuwe ronde of een nieuw seizoen hoeft hier niets te veranderen.
+//
+// GENKGO_TRAININGSRONDE blijft bestaan als noodrem: zet daar een id in en de
+// app gebruikt die ronde, wat er verder ook onder Planning staat.
+const PLANNING_MAP = 3433;
 
 const NAMES = [
   'federer', 'nadal', 'alcaraz', 'sinner', 'thiem',
@@ -373,13 +378,28 @@ export default {
       if (!auth || auth.role !== 'admin') return json({ error: 'Geen toegang' }, 403);
       if (!env.GENKGO_API_TOKEN) return json({ error: 'GENKGO_API_TOKEN ontbreekt' }, 500);
 
-      let indeling;
+      // Waar stond de app? Die keuze telt zwaarder dan "de nieuwste ronde",
+      // zodat een half ingedeelde volgende ronde de lopende niet wegdrukt.
+      // Met `ronde` in het verzoek stap je er bewust naartoe over.
+      const gevraagd = body.ronde
+        ? { seizoen: body.seizoen, ronde: body.ronde }
+        : (data.genkgo || {});
+
+      let indeling, keuze;
       try {
-        indeling = await haalIndeling(env, env.GENKGO_TRAININGSRONDE || TRAININGSRONDE);
+        keuze = env.GENKGO_TRAININGSRONDE
+          ? { seizoen: null, ronde: { id: Number(env.GENKGO_TRAININGSRONDE), naam: 'handmatig ingesteld' },
+              rondes: [], seizoenen: [] }
+          : await vindTrainingsronde(env, env.GENKGO_PLANNING_MAP || PLANNING_MAP, gevraagd);
+        indeling = await haalIndeling(env, keuze.ronde.id);
       } catch (e) {
         return json({ error: `Genkgo niet gelezen: ${e.message}` }, 502);
       }
       if (!indeling.length) return json({ error: 'Genkgo gaf geen groepen terug' }, 502);
+
+      // De boom hoeft niet mee terug, die is alleen intern nodig geweest.
+      const genkgo = { seizoen: keuze.seizoen, ronde: { id: keuze.ronde.id, naam: keuze.ronde.naam },
+                       rondes: keuze.rondes, seizoenen: keuze.seizoenen };
 
       // alle app-groepen op een rij, met hun trainer erbij
       const appGroepen = [];
@@ -477,7 +497,7 @@ export default {
       }
 
       if (!body.apply) {
-        return json({ ok: true, toegepast: false, groepen_in_genkgo: indeling.length, plan });
+        return json({ ok: true, toegepast: false, genkgo, groepen_in_genkgo: indeling.length, plan });
       }
 
       // ---- uitvoeren ----
@@ -559,8 +579,12 @@ export default {
         }
       }
 
+      // Onthouden waar we staan, zodat een volgende sync hier blijft en niet
+      // vanzelf naar een half ingedeelde volgende ronde springt.
+      data.genkgo = { seizoen: genkgo.seizoen, ronde: genkgo.ronde };
       await saveData(data);
-      return json({ ok: true, toegepast: true, groepen_in_genkgo: indeling.length,
+
+      return json({ ok: true, toegepast: true, genkgo, groepen_in_genkgo: indeling.length,
                     plan, overgeslagen, data });
     }
 

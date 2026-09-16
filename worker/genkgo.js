@@ -90,6 +90,90 @@ function niveauNaam(groepsnaam) {
 }
 
 /**
+ * Zoekt de trainingsronde die op dit moment telt.
+ *
+ * Onder de map Training staan mappen die altijd hetzelfde heten:
+ * "Trainingsronde 1", "Trainingsronde 2", "Trainingsronde 3". De volgende
+ * ronde wordt aangemaakt voordat hij gevuld is -- op 16-09-2026 bestond
+ * Trainingsronde 2 al en stond er nog geen enkele groep in, terwijl ronde 1
+ * net begonnen was.
+ *
+ * Daarom pakken we niet de hoogste ronde, maar de hoogste die ook echt iets
+ * bevat. Zodra Niels de volgende ronde vult schuift de app vanzelf mee, en
+ * tot die tijd blijft hij op de lopende ronde staan. Zonder die extra eis
+ * zou de app leeglopen op het moment dat iemand de map alvast aanmaakt.
+ */
+export async function vindTrainingsronde(env, planningMap, huidige = {}) {
+  const jaren = (await haal(env, `/organization/entry?resource%5Bparent%5D=${planningMap}`))
+    .filter((m) => /^\d{4}-\d{4}$/.test(String(m.name).trim()))
+    .sort((a, b) => String(b.name).localeCompare(String(a.name)));
+  if (!jaren.length) throw new Error(`geen seizoensmappen onder Planning (${planningMap})`);
+
+  // Eerst kijken waar de app al stond, daarna het nieuwste seizoen en zo
+  // terug. Drie is genoeg: staat er in die drie niets, dan is er iets anders
+  // aan de hand dan een seizoenswissel en moet er iemand naar kijken.
+  const kandidaten = [
+    ...jaren.filter((j) => j.id === Number(huidige.seizoen)),
+    ...jaren.filter((j) => j.id !== Number(huidige.seizoen)),
+  ].slice(0, 3);
+
+  const bekeken = [];
+  for (const jaar of kandidaten) {
+    const inhoud = await haal(env, `/organization/entry?resource%5Bparent%5D=${jaar.id}`);
+    const training = inhoud.find((e) => /^training$/i.test(String(e.name).trim()));
+    if (!training) { bekeken.push(`${jaar.name}: geen map Training`); continue; }
+
+    // Eén recursieve aanroep levert de rondes, de dagmappen en alle groepen.
+    // Groepen hangen onder een dagmap, dus tellen gaat via die tussenstap.
+    const boom = await haal(env, `/organization/entry?resource%5Bparent%5D=${training.id}&recursive=1`);
+    const ouderVan = new Map(boom.map((e) => [e.id, e.parentFolderId]));
+    const telling = new Map();
+    for (const e of boom) {
+      if (e.type !== 'trainingGroup') continue;
+      const ronde = ouderVan.get(e.parentFolderId);
+      telling.set(ronde, (telling.get(ronde) || 0) + 1);
+    }
+
+    const rondes = boom
+      .filter((e) => e.parentFolderId === training.id)
+      .map((e) => ({
+        id: e.id,
+        naam: e.name,
+        nr: Number((/(\d+)/.exec(e.name) || [])[1] || 0),
+        groepen: telling.get(e.id) || 0,
+      }))
+      .sort((a, b) => a.nr - b.nr);
+
+    const gevuld = rondes.filter((r) => r.groepen > 0);
+    if (!gevuld.length) {
+      bekeken.push(`${jaar.name}: alle rondes leeg`);
+      continue;
+    }
+
+    // Blijf staan waar de app al stond, zolang die ronde nog groepen heeft.
+    //
+    // Met opzet geen "pak de hoogste gevulde ronde". Een nieuwe ronde wordt
+    // in Genkgo over meerdere dagen ingedeeld: eerst een paar groepen, de
+    // volgende dag weer een paar. Zou de app meteen overspringen, dan raakten
+    // de trainers van de nog lopende ronde halverwege hun lijsten kwijt.
+    //
+    // Overstappen is daarom een besluit dat iemand neemt. `rondes` en
+    // `seizoenen` gaan mee terug zodat het beheerscherm kan laten zien dat er
+    // een volgende ronde klaarstaat en hoe vol die inmiddels is.
+    const gekozen = gevuld.find((r) => r.id === Number(huidige.ronde)) || gevuld[gevuld.length - 1];
+    return {
+      seizoen: { id: jaar.id, naam: jaar.name },
+      ronde: gekozen,
+      rondes,
+      seizoenen: jaren.map((j) => ({ id: j.id, naam: j.name })),
+      boom,
+    };
+  }
+
+  throw new Error(`geen gevulde trainingsronde gevonden (${bekeken.join('; ')})`);
+}
+
+/**
  * Haalt één trainingsronde op.
  * `map` is de id van de trainingsronde (TR1 2026-2027 = 18095).
  */
