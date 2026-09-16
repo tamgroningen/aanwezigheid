@@ -41,10 +41,15 @@ for (const [pad, [naam, type]] of Object.entries(BESTANDEN)) {
   inhoud.set(naam, { data: await Deno.readFile(`${MAP}/${naam}`), type });
 }
 
-// Op Deno Deploy wordt de poort gegeven; lokaal is 8000 vaak al bezet.
-const poort = Number(Deno.env.get("PORT")) || 8000;
+// Op Deno Deploy kiest het platform zelf de poort en luistert het mee; geef je
+// er dan een vast nummer mee, dan bindt de app op iets waar het platform niet
+// naar kijkt en blijft de uitrol eeuwig op "warming" staan. Zonder poort laten
+// we Deno Deploy zijn gang gaan.
+//
+// Lokaal wil je wel kunnen kiezen, want 8000 is vaak bezet: zet dan PORT.
+const poort = Number(Deno.env.get("PORT")) || 0;
 
-Deno.serve({ port: poort }, (req) => {
+Deno.serve(poort ? { port: poort } : {}, (req) => {
   const pad = new URL(req.url).pathname;
 
   if (pad === "/health") {
