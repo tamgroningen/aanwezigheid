@@ -208,6 +208,21 @@ Daarom liggen de drie publieke bestanden in een eigen map `publiek/`. Alles
 wat daarin ligt is openbaar opvraagbaar, alles daarbuiten kan niet mee. Zet er
 dus niets anders in.
 
+Twee dingen die op 16-09-2026 een uur kostten, voor wie hier weer staat:
+
+**Sta in de goede map.** `deno deploy --prod publiek` gedraaid vanuit je home
+of een ander project uploadt niets, meldt vrolijk "Successfully deployed" en
+zet de site op 404. Je herkent het aan "No files were changed, so there is
+nothing to upload" en aan een `deno.jsonc` die hij in die verkeerde map
+achterlaat. Gooi zo'n achtergelaten bestand weg: het koppelt die map aan deze
+app, en de volgende deploy daarvandaan haalt de site opnieuw onderuit. Goed
+gaat het als er **4 bestanden** worden geüpload.
+
+**Geef `Deno.serve` geen vaste poort.** Deno Deploy kiest zelf een poort en
+luistert daar mee. Bind je aan bijvoorbeeld 8000, dan draait de app wel maar
+slaagt de gezondheidscheck nooit en blijft de uitrol hangen op "warming".
+Lokaal geef je `PORT` mee, want 8000 is daar vaak bezet.
+
 `--org` en `--app` staan in `deno.json`. De app draait in **static mode**:
 Deno levert de bestanden uit `publiek/` uit en start geen server. `server.js`
 staat in de projectmap voor het geval we later serverlogica nodig hebben
