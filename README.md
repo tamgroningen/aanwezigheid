@@ -301,8 +301,8 @@ Provision certificate).
 
 ## Mails aan spelers die niet kwamen opdagen
 
-De verzender is een Apps Script onder **fiscus@tam.nl**, project *TAM
-trainingsmails niet gekomen*. De broncode staat in `appsscript/Code.gs`; die
+De verzender is een Apps Script onder **fiscus@tam.nl**, project [TAM
+trainingsmails niet gekomen](https://script.google.com/u/6/home/projects/11a3FKRaTlrc-d5XNrjikWethk2qhpmmuJx5guOJ4nSOJp_ISpW-x69n2/edit). De broncode staat in `appsscript/Code.gs`; die
 map is de kopie die je bewerkt, het origineel draait bij Google.
 
 Hoe het loopt:
@@ -328,6 +328,11 @@ Onder elk bericht staat de vaste handtekening van fiscus@tam.nl, met het
 TAM-logo als PNG in de mail zelf. Wisselt het bestuur, dan pas je bovenin
 `Code.gs` de drie regels `FISCUS_NAAM`, `FISCUS_BESTUUR` en `FISCUS_TELEFOON`
 aan.
+
+In de instellingen van de app staat een schakelaar **Automatische
+afwezigheidsmail aan**. Uit betekent dat de Worker een lege lijst teruggeeft,
+dus het script vinkt ook niets af en wat er intussen binnenkomt gaat alsnog mee
+zodra hij weer aan staat.
 
 Mailadressen worden per run bij Genkgo opgehaald en nergens bewaard. Staat er
 geen adres bij Genkgo, dan wordt de regel niet afgevinkt en komt hij morgen
