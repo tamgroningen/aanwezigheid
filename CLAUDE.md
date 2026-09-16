@@ -10,27 +10,24 @@ in Genkgo in, en de rest gaat vanzelf.** Floris hoeft er niet elke keer met zijn
 IT-kennis aan te pas te komen. Kom je iets tegen dat dat doel ondergraaft, dan
 is dat een bug, ook als niemand erom vraagt.
 
-## LET OP: openstaand beveiligingsprobleem
+## Het adminwachtwoord
 
-Deze repo is **openbaar** (github.com/tamgroningen/aanwezigheid). Tot
-16-09-2026 stond `const ADMIN_PASSWORD = 'training2026'` gewoon in
-`worker/index.js`, en de Worker-URL staat in `publiek/index.html`. Met die twee
-kon iedereen alle veertien `/admin`-eindpunten aanroepen, waaronder
-`/admin/export` (alle ledennamen en trainerscodes), `/admin/niet-gekomen` met
-`adressen: true` (haalt live mailadressen op bij Genkgo) en `/admin/wis-toekomst`.
+Deze repo is **openbaar** (github.com/tamgroningen/aanwezigheid). Het
+adminwachtwoord hoort dus niet in de code. Het staat in het Cloudflare-secret
+`ADMIN_PASSWORD`; ontbreekt dat, dan weigert elk `/admin`-eindpunt. Zetten met
+`npx wrangler secret put ADMIN_PASSWORD` vanuit `worker/`, daarna `npx wrangler
+deploy`, en de scripteigenschap `ADMIN_CODE` in het Apps Script bijwerken.
 
-De code leest het wachtwoord nu uit `env.ADMIN_PASSWORD` en weigert alles als
-dat secret ontbreekt. **Nog te doen zolang dit hier staat:**
+Tot 16-09-2026 stond `const ADMIN_PASSWORD = 'training2026'` gewoon in
+`worker/index.js`. Samen met de Worker-URL uit `publiek/index.html` gaf dat
+iedereen toegang tot alle veertien admin-eindpunten, waaronder `/admin/export`
+(alle ledennamen en trainerscodes), `/admin/niet-gekomen` met `adressen: true`
+(haalt live mailadressen op bij Genkgo) en `/admin/wis-toekomst`. Opgelost en
+het wachtwoord is vervangen; `training2026` staat nog wel in de
+commitgeschiedenis en werkt nergens meer.
 
-1. `cd worker && npx wrangler secret put ADMIN_PASSWORD` met een **nieuw**
-   wachtwoord. `training2026` is verbrand, dat staat in de geschiedenis van een
-   openbare repo.
-2. `npx wrangler deploy`.
-3. Scripteigenschap `ADMIN_CODE` in het Apps Script bijwerken.
-4. De nieuwe code aan Niels en Daphne doorgeven.
-
-Is dit gedaan, haal deze sectie dan weg. Wachtwoorden typ je niet zelf in
-formulieren, dat doet Floris.
+Zet nooit een wachtwoord, token of code in een bestand in deze repo, ook niet
+in een voorbeeld of een commentaarregel.
 
 ## Waar wat draait
 
@@ -169,7 +166,6 @@ legt uit *waarom* iets zo is, niet wat de regel doet.
 
 ## Nog open
 
-- Het beveiligingsprobleem bovenaan.
 - De overnemers-parser in `afmeldingen.js`.
 - De begrotingstoelichting voor de OALV zegt nog 10:00 in plaats van 09:00.
 - Het mailadres van Kristjan Liiv ontbreekt in de trainerslijst
