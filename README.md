@@ -360,7 +360,16 @@ launchctl load -w ~/Library/LaunchAgents/nl.tam.aanwezigheid.backup.plist
 ```
 
 Kopieer daarvoor `scripts/nl.tam.aanwezigheid.backup.plist` naar
-`~/Library/LaunchAgents/`. Handmatig draaien kan altijd met
+`~/Library/LaunchAgents/`. Controleren of hij geladen is met
+`launchctl list | grep tam.aanwezigheid`, en een keer laten draaien met
+`launchctl kickstart -k gui/$(id -u)/nl.tam.aanwezigheid.backup`. Wat hij deed
+staat daarna in `backups/backup.log`.
+
+Let op bij wijzigingen aan het script: launchd geeft je gewone omgeving niet
+mee. Er staat een node uit 2024 in `/usr/local/bin` die te oud is voor
+wrangler, dus het script zet de node van nvm er expliciet overheen. Test een
+wijziging met `env -i HOME=$HOME USER=$USER PATH=/usr/bin:/bin:/usr/sbin:/sbin
+scripts/backup-lokaal.sh`, niet alleen vanaf je eigen prompt. Handmatig draaien kan altijd met
 `scripts/backup-lokaal.sh`. Het script gebruikt je eigen wrangler-aanmelding,
 er staat dus geen wachtwoord in.
 

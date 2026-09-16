@@ -10,6 +10,21 @@
 
 set -euo pipefail
 
+# launchd start dit zonder je gewone omgeving, dus met een PATH waar node niet
+# in zit. Zoek hem zelf op, anders mislukt de back-up elke zondag in stilte.
+#
+# De volgorde telt: wat als laatste wordt toegevoegd staat vooraan. In
+# /usr/local/bin staat een node uit 2024 die te oud is voor wrangler, dus die
+# van nvm moet er overheen.
+for kandidaat in /usr/local/bin /opt/homebrew/bin $HOME/.nvm/versions/node/*/bin(N); do
+  PATH=$kandidaat:$PATH
+done
+if ! command -v npx > /dev/null; then
+  echo "BACK-UP MISLUKT: npx niet gevonden. Staat node ergens anders?" >&2
+  exit 1
+fi
+echo "node: $(node --version) uit $(command -v node)"
+
 MAP=${0:a:h:h}
 NS=e1a81333d90f4976b13fd7dd877a732d
 UIT=$MAP/backups
