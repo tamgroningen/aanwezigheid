@@ -958,7 +958,11 @@ export default {
       const opslag = JSON.parse(await env.AANWEZIGHEID.get('nietgekomen') || '{}');
       const gemaild = opslag.gemaild || {};
       const nu = new Date().toISOString();
-      for (const sleutel of body.sleutels) gemaild[sleutel] = nu;
+      // `reden` is er voor het geval je iets afvinkt zonder te versturen,
+      // bijvoorbeeld de achterstand bij het in gebruik nemen. Dan staat er
+      // later niet ten onrechte dat iemand een bericht heeft gehad.
+      const waarde = body.reden ? `${nu} (${String(body.reden).slice(0, 60)})` : nu;
+      for (const sleutel of body.sleutels) gemaild[sleutel] = waarde;
       const klaar = (opslag.klaar || []).filter((r) => !gemaild[r.sleutel]);
       await env.AANWEZIGHEID.put('nietgekomen',
         JSON.stringify({ ...opslag, gemaild, klaar }));
