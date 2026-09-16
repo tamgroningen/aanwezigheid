@@ -14,13 +14,17 @@
  * dit is alleen de uitlevering van de pagina zelf.
  */
 
-// Alleen deze map gaat mee naar Deno Deploy. Dat is met opzet een aparte map
-// en niet de projectmap: `deno deploy` uploadt standaard alles wat het onder
-// de opgegeven map vindt, en hiernaast liggen `worker/.env.local` met het
+// Dit bestand staat in `publiek/` en serveert zijn eigen map. Die map is de
+// enige die naar Deno Deploy gaat: `deno deploy` uploadt alles onder de map
+// die je opgeeft, en een map hoger liggen `worker/.env.local` met het
 // Genkgo-token, `worker/index.js` met het adminwachtwoord en `backups/` met
-// ledennamen en trainerscodes. Door alleen `publiek/` uit te rollen kan dat
-// niet meer per ongeluk mee.
-const MAP = `${import.meta.dirname}/publiek`;
+// ledennamen en trainerscodes. Door `publiek/` uit te rollen in plaats van de
+// projectmap kan dat niet per ongeluk mee.
+//
+// Door server.js hier neer te zetten werkt het uitrollen bovendien of de app
+// nu op static staat (Deno levert de bestanden zelf uit) of op dynamic (dit
+// bestand doet het). Er staat niets geheims in.
+const MAP = import.meta.dirname;
 
 const BESTANDEN = {
   "/": ["index.html", "text/html; charset=utf-8"],

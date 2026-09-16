@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "dev": "PORT=8791 deno run --allow-read --allow-net --allow-env server.js"
+    "dev": "PORT=8791 deno run --allow-read --allow-net --allow-env publiek/server.js"
   },
   "deploy": {
     "org": "tam",
