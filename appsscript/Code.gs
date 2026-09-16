@@ -256,11 +256,20 @@ function backupNaarDrive() {
   return naam;
 }
 
-/** De map waar de back-ups in komen; maakt hem aan als hij er nog niet is. */
+// De map op Drive waar de back-ups in komen: "Aanwezigheid trainingen" onder
+// fiscus@tam.nl. Vastgezet op de id en niet op de naam, want een map
+// hernoemen mag nooit stilletjes een tweede map opleveren.
+var BACKUP_MAP_ID = '13xIpjVi3aHWHZ40jZXzSW9UGYasELxUL';
+
 function backupMap_() {
-  var naam = 'TAM aanwezigheid back-ups';
-  var mappen = DriveApp.getFoldersByName(naam);
-  return mappen.hasNext() ? mappen.next() : DriveApp.createFolder(naam);
+  try {
+    return DriveApp.getFolderById(BACKUP_MAP_ID);
+  } catch (e) {
+    // Liever hard stoppen dan de back-up ergens anders neerzetten, want daar
+    // ga je niet zoeken als je hem nodig hebt.
+    throw new Error('De back-upmap op Drive is niet bereikbaar (' + BACKUP_MAP_ID
+                  + '): ' + e);
+  }
 }
 
 /** Zet de dagelijkse trigger. Eén keer draaien, daarna niet meer nodig. */

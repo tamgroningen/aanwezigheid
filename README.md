@@ -346,8 +346,13 @@ jaar. Daarom liggen er drie kopieën, bij drie verschillende partijen.
 | Waar | Wanneer | Door |
 | --- | --- | --- |
 | Cloudflare KV, sleutel `backup:<datum>` | zondag 03:00 | de Worker zelf |
-| Google Drive, map *TAM aanwezigheid back-ups* onder fiscus@tam.nl | zondag 04:00 | `backupNaarDrive` in het Apps Script |
+| Google Drive, map *Aanwezigheid trainingen* onder fiscus@tam.nl | zondag 04:00 | `backupNaarDrive` in het Apps Script |
 | Deze laptop, `backups/aanwezigheid-<datum>.json` | zondag 04:00 | `scripts/backup-lokaal.sh` via launchd |
+
+De Drive-map staat in `Code.gs` vast op zijn id, niet op zijn naam. Hernoem je
+de map, dan blijft het goed gaan; verplaats je hem naar een ander account, dan
+stopt het script met een duidelijke fout in plaats van de back-up ergens anders
+neer te zetten.
 
 De kopie in KV staat in dezelfde namespace als de live gegevens. Die helpt tegen
 een verkeerde bewerking, niet tegen het kwijtraken van de namespace zelf.
