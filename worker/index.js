@@ -983,10 +983,10 @@ export default {
       return;
     }
 
-    // Afmeldingen om 10:00 Nederlandse tijd -- de uiterste afmeldtijd van de
-    // dag. De cron van Cloudflare draait op UTC en dat is 's zomers een uur
-    // naast onze tijd, dus hij vuurt om 08:00 en 09:00 UTC en we laten er
-    // hier eentje door.
+    // Afmeldingen om 10:00 Nederlandse tijd, een uur na de uiterste
+    // afmeldtijd van 09:00. De cron van Cloudflare draait op UTC en dat is
+    // 's zomers een uur naast onze tijd, dus hij vuurt om 08:00 en 09:00 UTC
+    // en we laten er hier eentje door.
     if (!isTienUurInAmsterdam()) return;
     ctx.waitUntil(draaiAfmeldingen(env, { schrijf: true }));
   },

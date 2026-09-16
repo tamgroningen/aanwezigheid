@@ -298,3 +298,32 @@ _acme-challenge.aanwezigheid.tam.nl. CNAME  <hash>._acme.deno.net.
 De hash krijg je van Deno Deploy bij het toevoegen van het domein. Daarna in
 de console het certificaat aanvragen (Automatic certificate ->
 Provision certificate).
+
+## Mails aan spelers die niet kwamen opdagen
+
+De verzender is een Apps Script onder **fiscus@tam.nl**, project *TAM
+trainingsmails niet gekomen*. De broncode staat in `appsscript/Code.gs`; die
+map is de kopie die je bewerkt, het origineel draait bij Google.
+
+Hoe het loopt:
+
+1. De Worker haalt om 10:00 de afmeldingen op en zet in KV (`nietgekomen`) wie
+   er afwezig was zonder afmelding, in een training die de trainer al heeft
+   ingevuld.
+2. Iemand komt pas op de verzendlijst als hij 24 uur onveranderd op afwezig
+   staat. Dat meet de Worker door de meting van vandaag met die van gisteren te
+   vergelijken, dus een trainer die halverwege het invullen is stuurt geen
+   mails de deur uit.
+3. Het Apps Script draait dagelijks om 11:00, haalt de lijst met adressen op
+   bij `/admin/niet-gekomen`, verstuurt, en vinkt af via `/admin/gemaild`.
+
+Scripteigenschappen: `WORKER_URL`, `ADMIN_CODE`, `TEST_MAIL`.
+
+Functies in het script: `verstuurNietGekomen` (de dagelijkse run),
+`proefdraaien` (laat in het logboek zien wie er aan de beurt is, verstuurt
+niets), `testbericht` (stuurt één voorbeeld naar `TEST_MAIL`), `zetTrigger`
+(zet de dagelijkse trigger, eenmalig).
+
+Mailadressen worden per run bij Genkgo opgehaald en nergens bewaard. Staat er
+geen adres bij Genkgo, dan wordt de regel niet afgevinkt en komt hij morgen
+terug.
