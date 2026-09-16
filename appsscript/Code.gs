@@ -122,7 +122,8 @@ function bericht_(regel) {
         if (p === '') return '';
         return '<p style="margin:0 0 12px">' + p
           .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-          .replace(BOETEBELEID, '<a href="' + BOETEBELEID + '">het boetebeleid</a>') + '</p>';
+          .replace(BOETEBELEID, '<a href="' + BOETEBELEID + '">het boetebeleid</a>')
+          .replace('kwijtgescholden', '<b>kwijtgescholden</b>') + '</p>';
       }).join('')
     + handtekeningHtml_() + '</div>';
 
